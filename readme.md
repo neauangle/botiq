@@ -9,7 +9,7 @@ See ./demos/ for working examples.
 
 
 ##### Basic code structure:
-Basic code structure: ethers.js and binance.js handle the specifics of their tokens, while common.js is the place to look for the actual tracker API. It should be quite easy to add CEXs if you make judicious use of common.massageCexMarketSwapData.
+ethers.js and binance.js handle the specifics of their tokens, while common.js is the place to look for the actual tracker API. It should be quite easy to add CEXs if you make judicious use of common.massageCexMarketSwapData.
 
 
 
