@@ -28,12 +28,13 @@ function getFunctionKey(tracker){
 function checkFunctionKey(tracker, key){
     return trackerToFunctionKeysMap.has(tracker) && trackerToFunctionKeysMap.get(tracker).includes(key);
 }
-
 export function stopFunctionsForTracker({tracker}){
     if (!trackerToFunctionKeysMap.has(tracker)){
         trackerToFunctionKeysMap.get(tracker).splice(0);
     }
 }
+
+
 
 export async function awaitPriceRise({tracker, triggerPriceString, pollIntervalSeconds}){
     return awaitPriceRiseOrFall({type: 'RISE', tracker, triggerPriceString, pollIntervalSeconds});
@@ -45,12 +46,13 @@ export async function awaitPriceFall({tracker, triggerPriceString, pollIntervalS
 
 function getTriggerPrice(type, tracker, triggerPriceString){
     let useFiat = false;
-    if(triggerPriceString.startsWith('$')){
+    if(triggerPriceString.startsWith('$') || tracker.pair.comparatorIsFiat){
         useFiat = true;
         triggerPriceString = util.trim(triggerPriceString, '$');
     }
 
     const priceDecimals = useFiat ? common.FIAT_DEFAULT_DECIMALS : tracker.comparator.decimals;
+    const s = useFiat ? '$' : '';
     let triggerPrice = {rational: null, string: null};
     if (triggerPriceString.endsWith('%')){
         triggerPriceString = util.trim(triggerPriceString, '%');
@@ -61,11 +63,11 @@ function getTriggerPrice(type, tracker, triggerPriceString){
         const deltaRational = bigRational(triggerPriceString).divide(100).multiply(currentPrice.rational);
         triggerPrice.rational = currentPrice.rational[type === 'RISE' ? 'add' : 'minus'](deltaRational);
         triggerPrice.string = util.formatRational(triggerPrice.rational, priceDecimals);
-        log(`Trigger Price: ${type} to ${triggerPriceString}% of ${currentPrice.string} = ${triggerPrice.string}`);
+        log(`Trigger Price: ${type} to ${triggerPriceString}% of ${s}${currentPrice.string} = ${s}${triggerPrice.string}`);
     } else {
         triggerPrice.rational = bigRational(triggerPriceString);
         triggerPrice.string = triggerPriceString;
-        log(`Trigger Price: ${type} to ${triggerPrice.string}`);
+        log(`Trigger Price: ${type} to ${s}${triggerPrice.string}`);
     }
 
     const swapPriceKey = useFiat ? 'averageTokenPriceFiat' :  'averageTokenPriceComparator';
@@ -75,26 +77,33 @@ function getTriggerPrice(type, tracker, triggerPriceString){
 
 async function awaitPriceRiseOrFall({type, tracker, triggerPriceString, pollIntervalSeconds}){
     const functionKey = getFunctionKey(tracker);
-    const {swapPriceKey, triggerPrice} = getTriggerPrice(type, tracker, triggerPriceString);
+    const {useFiat, swapPriceKey, triggerPrice} = getTriggerPrice(type, tracker, triggerPriceString);
+    const s = useFiat ? '$' : '';
     triggerPriceString = undefined; //use triggerPrice.string from here
 
     return new Promise((resolve, reject) => {
-        const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
-        const key = addListenerFunc({listener: (details) => {
+        function listener(details){
             if (!checkFunctionKey(tracker, functionKey)){
-                console.log('removed');
                 tracker.removeListener({key});
                 resolve();
                 return;
             }
             const currentPrice = details[swapPriceKey];
-            console.log(currentPrice.string);
-            if (currentPrice.rational !== null && TYPE_TO_TEST[type](currentPrice.rational, triggerPrice.rational)){
-                tracker.removeListener({key});
-                resolve();
+            if (currentPrice.rational !== null){
+                console.log(`${s}${currentPrice.string}`);
+                if (TYPE_TO_TEST[type](currentPrice.rational, triggerPrice.rational)){
+                    tracker.removeListener({key});
+                    resolve();
+                }
+            } else {
+                console.log(`Cannot resolve price "${swapPriceKey}" (probably no fiat conversion available)`, currentPrice);
             }
-              
-        }, pollIntervalSeconds});
+        };
+        const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
+        const key = addListenerFunc({listener, pollIntervalSeconds});
+        if (addListenerFunc !== tracker.addPollingListener){//if polling, it gets called straight away anyway
+            listener({[swapPriceKey]: useFiat ? tracker.mostRecentPrices.fiat : tracker.mostRecentPrices.comparator});
+        }
     });
 }
 
@@ -126,13 +135,14 @@ export async function awaitFallThenRise({tracker, firstTriggerString, thenTrigge
 
 async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds}){
     const functionKey = getFunctionKey(tracker);
-    if (firstTriggerString.startsWith('$') !== thenTriggerString.startsWith('$')){
+    if (!tracker.pair.comparatorIsFiat && (firstTriggerString.startsWith('$') !== thenTriggerString.startsWith('$'))){
         throw Error("firstTriggerString and thenTriggerString must agree on whether to use fiat or not");
     }
     if (!thenTriggerString.endsWith('%')){
         throw Error('thenTriggerString must be a percentage');
     }
     const {useFiat, swapPriceKey, triggerPrice, priceDecimals} = getTriggerPrice(types[0], tracker, firstTriggerString);
+    const s = useFiat ? '$' : '';
     firstTriggerString = undefined; //use triggerPrice.string from here
     thenTriggerString = util.trim(thenTriggerString, '$');
     thenTriggerString = util.trim(thenTriggerString, '%');
@@ -145,7 +155,6 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
 
     return new Promise((resolve, reject) => {
         let key;
-        const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
         function listener(details){
             if (!checkFunctionKey(tracker, functionKey)){
                 tracker.removeListener({key});
@@ -154,17 +163,17 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
             }
 
             const currentPrice = details[swapPriceKey];
-            //console.log(currentPrice.string);
+            //console.log(`${s}${currentPrice.string}`);
             if (!hasHitInitialTrigger){
                 if (currentPrice.rational !== null && TYPE_TO_TEST[types[0]](currentPrice.rational, triggerPrice.rational)){
-                    log(`Initial trigger met at ${currentPrice.string}`);
+                    log(`Initial trigger met at ${s}${currentPrice.string}`);
                     hasHitInitialTrigger = true;
                 }
             }
 
             if (hasHitInitialTrigger){
                 if (!mostExtremePriceAfterInitialTrigger || TYPE_TO_TEST[types[0]](currentPrice.rational, mostExtremePriceAfterInitialTrigger.rational)){
-                    log(`Price ${types[0]} to new bounds: ${util.formatRational(currentPrice.rational, priceDecimals)}`);
+                    log(`Price ${types[0]} to new bounds: ${s}${util.formatRational(currentPrice.rational, priceDecimals)}`);
                     mostExtremePriceAfterInitialTrigger = currentPrice;
                     //add to lowerbounds to get the trigger price to hit on our way up, and vice versa
                     //RISE is lowerbounds because we're on our way back up from extreme lowerbounds to that lowerbounds + offset
@@ -177,25 +186,25 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
                             delta = mostExtremePriceAfterInitialTrigger.rational.minus(priceOnActivation.rational).abs();
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.minus(delta.multiply(thenFractionRational));
                         }
-                        log(`Then trigger: ${types[1]} ${thenTriggerString}% of delta ${util.formatRational(delta, priceDecimals)} to ${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
+                        log(`Then trigger: ${types[1]} ${thenTriggerString}% of delta ${s}${util.formatRational(delta, priceDecimals)} to ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
                     } else {
                         if (types[1] === 'RISE'){
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.add(mostExtremePriceAfterInitialTrigger.rational.multiply(thenFractionRational));
                         } else {
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.minus(mostExtremePriceAfterInitialTrigger.rational.multiply(thenFractionRational));
                         }
-                        log(`Then trigger: ${types[1]} to ${thenTriggerString}% of ${mostExtremePriceAfterInitialTrigger.string} = ${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
+                        log(`Then trigger: ${types[1]} to ${thenTriggerString}% of ${s}${mostExtremePriceAfterInitialTrigger.string} = ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
                     }
                 }
     
                 if (TYPE_TO_TEST[types[1]](currentPrice.rational, thenTriggerPriceRational)){
-                    log(`Then trigger met at ${currentPrice.string}`);
+                    log(`Then trigger met at ${s}${currentPrice.string}`);
                     //I'm unsure on this. Might be better to have usingPercentOfDelta test against initialTrigger too, or use acivationPice?
                     const testJumpbackAgainst = usingPercentOfDelta ? 'activation price' : 'initial trigger';
                     const testJumpbackPrice = testJumpbackAgainst === 'activation price' ? priceOnActivation : triggerPrice;//1st trigger
                     
                     if (TYPE_TO_TEST[types[1]](currentPrice.rational, testJumpbackPrice.rational)){
-                        log(`Price ${types[1]} back past ${testJumpbackAgainst}! Resetting...`);
+                        log(`Price ${s}${types[1]} back past ${s}${testJumpbackAgainst}! Resetting...`);
                         //we reset the second-stage trigger but keep the iniital trigger as is (ie if it was given as a percentage
                         //we don't recalculate using the current price)
                         hasHitInitialTrigger = false;
@@ -208,7 +217,11 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
                 } 
             }
         }    
+        const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
         key = addListenerFunc({listener, pollIntervalSeconds});
+        if (addListenerFunc !== tracker.addPollingListener){//if polling, it gets called straight away anyway
+            listener({[swapPriceKey]: useFiat ? tracker.mostRecentPrices.fiat : tracker.mostRecentPrices.comparator});
+        }
     });
 }
 

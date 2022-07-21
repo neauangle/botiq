@@ -26,15 +26,13 @@ export default {
 /*
     TODO
     -----
-make awaits test the current price on entry- it could already be satisfied
-add dollar signs where fiat in awaits
 ethers
     test liquidity
     add cancelTransaction
         get the nonce used and replace it using higher gas: https://info.etherscan.com/how-to-cancel-ethereum-pending-transactions/
 binance
     test withdraw -> wait -> ethers transfer
-
+we will need to refactor swap and addRemoveLiquidity under the uniswap v2 eventually and add uniswap v3
 technical analysis
 video tutorials
 
