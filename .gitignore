@@ -2,6 +2,7 @@
 *ffprobe.exe
 testdata/
 private_tests/
+cache/
 
 *JMnedict.xml
 *kanjidic2.xml
