@@ -1,7 +1,11 @@
 {
   "name": "botiq",
   "version": "0.1.0",
-  "description": "High-level library useful for creating cryptocurrency bots.",
+  "description": "High-level library for creating cryptocurrency bots.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neauangle/botiq.git"
+  },
   "main": "index.js",
   "type": "module",
   "scripts": {
