@@ -2,10 +2,25 @@ import binance from './binance.js';
 import ethers from './ethers.js';
 import * as modules from './modules/index.js';
 
+
+async function raceToResolve(keytoFunction){
+    const promiseArray = [];
+    for (const key of Object.keys(keytoFunction)){
+        promiseArray.push(new Promise(async (resolve, reject) => {
+            await keytoFunction[key];
+            resolve(key);
+        }));
+    }
+    return Promise.any(promiseArray);
+}
+
+
+
 export default {
     binance,
     ethers,
-    modules
+    modules,
+    raceToResolve
 }
 
 /*

@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node test.js",
+    "test": "echo \"No test specified\"",
     "start": "node index.js"
   },
   "author": "Neauangle",

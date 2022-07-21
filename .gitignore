@@ -1,6 +1,7 @@
 *ffmpeg.exe
 *ffprobe.exe
 testdata/
+private_tests/
 
 *JMnedict.xml
 *kanjidic2.xml

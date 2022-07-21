@@ -9,6 +9,7 @@ import {log} from "./logger.js";
 import * as util from './util.js';
 import common from './common.js';
 import ethersBase from './ethers-base.js';
+import { exit } from 'process';
 
 const VALID_ERC20_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const SWAP_FILTER_HASHED = ethers.utils.id("Swap(address,uint256,uint256,uint256,uint256,address)");
@@ -143,11 +144,41 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, nativeToken
         return sendOne(contract, ...args);
     }
 
+    async function sendCustomData({privateKey, toAddress, data, value, gasPercentModifier, maxGasPriceGwei}){
+        const wallet = new ethers.Wallet(privateKey, endpoint.provider);
+        const nonceManagerProvider = getNonceManagerProvider(wallet);
+
+        let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
+        let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
+        const tx = await checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGasPriceGweiString);
+        tx.from = wallet.address;
+        tx.to = toAddress;
+        tx.value =  value ? ethers.utils.parseEther(value.toString()) : undefined;
+        tx.data = data;
+
+        const transactionResponse = await sendOne(nonceManagerProvider, 'sendTransaction', tx);
+        log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`);
+        const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);
+        log('OK! TX: ' + transactionReceipt.transactionHash);
+
+        return {
+            transactionHash: transactionReceipt.transactionHash,
+            ...(await getGasFeeSpent(endpoint, transactionResponse, transactionReceipt))
+        }
+    }
+
+    async function sendCustomDataString({privateKey, toAddress, string, value}){
+        return sendCustomData({privateKey, toAddress, data: ethers.utils.hexlify(ethers.utils.toUtf8Bytes(string)), value})
+    }
+
+
     const endpoint = {
         provider,
         chainId,
         nativeToken,
         blockExplorerURL,
+        sendCustomData,
+        sendCustomDataString,
         getRecommendedGasGwei,
         getTokenInfoByAddress,
         sendOne,
@@ -342,6 +373,7 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         },
         extraProperties: {
             chainId: endpoint.chainId,
+
             estimateFeeOfBuyTokensWithExact: async function({privateKey, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
                 return swap({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee: true});
             },
@@ -634,11 +666,12 @@ async function waitForTransaction(endpoint, transactionResponse){
     return result;
 }
 
-async function checkAllowance({endpoint, walletAddress, addressToAllow, tokenAddress, requiredAmount}){
+async function checkAllowance({endpoint, wallet, addressToAllow, tokenAddress, requiredAmount}){
     if (tokenAddress.toUpperCase() !== endpoint.nativeToken.address.toUpperCase()){//no need for approval to spend native wrapped token
-        const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
-        const approvedAmountBigNumber = await endpoint.sendOne(tokenContract, 'allowance', walletAddress, addressToAllow);
+        const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, wallet);
+        const approvedAmountBigNumber = await endpoint.sendOne(tokenContract, 'allowance', wallet.address, addressToAllow);
         if (approvedAmountBigNumber.lt(requiredAmount)){
+            console.log(tokenAddress, wallet.address, addressToAllow, approvedAmountBigNumber.toString(), requiredAmount.toString());
             log(`Approving ${tokenAddress} for router ${addressToAllow}`);
             const tx = await endpoint.sendOne(tokenContract, 'approve', addressToAllow, ethers.constants.MaxUint256);
             await waitForTransaction(endpoint, tx);
@@ -748,7 +781,7 @@ async function swap({tracker, privateKey, method, exactQuantity, slippagePercent
     const amountToSpendBigNumber = routeIndexOfExact === 0 ? exactQuantityBigNumber : inexactBoundsBigNumber;
     await checkAllowance({
         endpoint: trackerPrivate.endpoint, 
-        walletAddress: wallet.address, 
+        wallet: wallet, 
         addressToAllow: trackerPrivate.exchange.routerAddress,
         tokenAddress: addressToSpend, 
         requiredAmount: amountToSpendBigNumber
@@ -802,7 +835,8 @@ async function swap({tracker, privateKey, method, exactQuantity, slippagePercent
     } else {
         methodUsed = routeIndexOfExact === 0 ? 'swapExactTokensForTokens' : 'swapTokensForExactTokens';
         transactionResponse = await functionToCall(
-            routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumberroute, deadline, overrides
+            routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, 
+            wallet.address, deadline, overrides
         );
     }
 
@@ -991,7 +1025,7 @@ slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
         const mintokenQuantityBigNumber = BigNumber.from(minTokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
         await checkAllowance({
             endpoint, 
-            walletAddress: wallet.address, 
+            wallet: wallet, 
             addressToAllow: trackerPrivate.exchange.routerAddress,
             tokenAddress: token.address, 
             requiredAmount: tokenQuantityBigNumber
@@ -1002,7 +1036,7 @@ slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
         const minComparatorQuantityBigNumber = BigNumber.from(minComparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
         await checkAllowance({
             endpoint, 
-            walletAddress: wallet.address, 
+            wallet: wallet, 
             addressToAllow: trackerPrivate.exchange.routerAddress,
             tokenAddress: comparator.address, 
             requiredAmount: comparatorQuantityBigNumber
@@ -1068,7 +1102,7 @@ slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
         const pairQuantityBigNumber = BigNumber.from(pairQuantityRational.multiply(bigRational('10').pow(node.pairDecimals)).toDecimal(0));
         await checkAllowance({
             endpoint, 
-            walletAddress: wallet.address, 
+            wallet: wallet, 
             addressToAllow: trackerPrivate.exchange.routerAddress,
             tokenAddress: pair.address, 
             requiredAmount: pairQuantityBigNumber
@@ -1352,7 +1386,7 @@ function removeContractEventListener({endpoint, contractAddress, abiFragment, li
     }
 }
 
-function createWalletFromPrivateKey(privateKey){
+function createWalletFromPrivateKey({privateKey}){
     return new ethers.Wallet(privateKey);
 }
 

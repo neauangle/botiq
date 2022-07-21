@@ -16,6 +16,24 @@ const TYPE_TO_TEST = {
     'FALL': (a, b) => a.lesser(b),
 }
 
+const trackerToFunctionKeysMap = new Map();
+let functionKeyCounter = 0;
+function getFunctionKey(tracker){
+    if (!trackerToFunctionKeysMap.has(tracker)){
+        trackerToFunctionKeysMap.set(tracker, [])
+    }
+    trackerToFunctionKeysMap.get(tracker).push(++functionKeyCounter);
+    return functionKeyCounter;
+}
+function checkFunctionKey(tracker, key){
+    return trackerToFunctionKeysMap.has(tracker) && trackerToFunctionKeysMap.get(tracker).includes(key);
+}
+
+export function stopFunctionsForTracker({tracker}){
+    if (!trackerToFunctionKeysMap.has(tracker)){
+        trackerToFunctionKeysMap.get(tracker).splice(0);
+    }
+}
 
 export async function awaitPriceRise({tracker, triggerPriceString, pollIntervalSeconds}){
     return awaitPriceRiseOrFall({type: 'RISE', tracker, triggerPriceString, pollIntervalSeconds});
@@ -56,14 +74,21 @@ function getTriggerPrice(type, tracker, triggerPriceString){
 
 
 async function awaitPriceRiseOrFall({type, tracker, triggerPriceString, pollIntervalSeconds}){
+    const functionKey = getFunctionKey(tracker);
     const {swapPriceKey, triggerPrice} = getTriggerPrice(type, tracker, triggerPriceString);
     triggerPriceString = undefined; //use triggerPrice.string from here
 
     return new Promise((resolve, reject) => {
         const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
         const key = addListenerFunc({listener: (details) => {
+            if (!checkFunctionKey(tracker, functionKey)){
+                console.log('removed');
+                tracker.removeListener({key});
+                resolve();
+                return;
+            }
             const currentPrice = details[swapPriceKey];
-            //console.log(currentPrice.string);
+            console.log(currentPrice.string);
             if (currentPrice.rational !== null && TYPE_TO_TEST[type](currentPrice.rational, triggerPrice.rational)){
                 tracker.removeListener({key});
                 resolve();
@@ -100,6 +125,7 @@ export async function awaitFallThenRise({tracker, firstTriggerString, thenTrigge
 
 
 async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds}){
+    const functionKey = getFunctionKey(tracker);
     if (firstTriggerString.startsWith('$') !== thenTriggerString.startsWith('$')){
         throw Error("firstTriggerString and thenTriggerString must agree on whether to use fiat or not");
     }
@@ -121,6 +147,12 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
         let key;
         const addListenerFunc = pollIntervalSeconds ? tracker.addPollingListener : tracker.addSwapListener;
         function listener(details){
+            if (!checkFunctionKey(tracker, functionKey)){
+                tracker.removeListener({key});
+                resolve();
+                return;
+            }
+
             const currentPrice = details[swapPriceKey];
             //console.log(currentPrice.string);
             if (!hasHitInitialTrigger){
@@ -180,3 +212,45 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
     });
 }
 
+
+
+
+export async function awaitFallThenRiseWithUpshift({tracker, upshiftPercentage, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds}){
+    const functionKey = getFunctionKey(tracker);
+    let fallThenRiseTriggered = false;
+    while (!fallThenRiseTriggered){
+        if (!checkFunctionKey(tracker, functionKey)){
+            return;
+        }
+        await Promise.race([
+            awaitPriceRise({tracker, triggerPriceString: upshiftPercentage, pollIntervalSeconds}),
+            async () => {
+                awaitFallThenRise({tracker, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds});
+                fallThenRiseTriggered = true;
+            } 
+        ]);
+        if (!fallThenRiseTriggered){
+            log(`Upshift triggered, resetting...`);
+        }
+    }
+}
+
+export async function awaitRiseThenFallWithDownshift({tracker, downshiftPercentage, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds}){
+    const functionKey = getFunctionKey(tracker);
+    let riseThenFallTriggered = false;
+    while (!riseThenFallTriggered){
+        if (!checkFunctionKey(tracker, functionKey)){
+            return;
+        }
+        await Promise.race([
+            awaitPriceFall({tracker, triggerPriceString: downshiftPercentage, pollIntervalSeconds}),
+            async () => {
+                awaitRiseThenFall({tracker, firstTriggerString, thenTriggerString, usingPercentOfDelta, pollIntervalSeconds});
+                riseThenFallTriggered = true;
+            } 
+        ]);
+        if (!riseThenFallTriggered){
+            log(`Downshift triggered, resetting...`);
+        }
+    }
+}
