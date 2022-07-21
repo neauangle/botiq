@@ -9,7 +9,6 @@ import {log} from "./logger.js";
 import * as util from './util.js';
 import common from './common.js';
 import ethersBase from './ethers-base.js';
-import { exit } from 'process';
 
 const VALID_ERC20_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const SWAP_FILTER_HASHED = ethers.utils.id("Swap(address,uint256,uint256,uint256,uint256,address)");
@@ -58,9 +57,9 @@ function writeOutContractAddressToInfoCache(){
 
 
 
+async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplorerURL, fiatTokenAddress, nativeTokenAddress, defaultExchange}){
+    console.log('Adding endpoint...');
 
-
-async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, nativeTokenAddress, blockExplorerURL}){
     const limiter =  new RateLimiter({ tokensPerInterval: rateLimitPerSecond, interval: "second" });
     const provider = new ethers.providers.JsonRpcProvider(accessURL);
     const chainId = (await provider.getNetwork()).chainId;
@@ -73,7 +72,37 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, nativeToken
             eventFilterToRegisteredEvents: {},
         }
     }
-    const nativeToken = await getTokenInfoByAddress(nativeTokenAddress);
+
+    if (!nativeTokenAddress || !fiatTokenAddress || !defaultExchange){
+        for (const chain of Object.values(ethersBase.chains)){
+            if (chain.chainIds.includes(chainId)){
+                if (!nativeTokenAddress){
+                    nativeTokenAddress = Object.values(chain.tokenAddresses)[0];
+                } 
+                if (!fiatTokenAddress){
+                    fiatTokenAddress = Object.values(chain.tokenAddresses)[1];
+                }
+                if (!defaultExchange){
+                    defaultExchange = Object.values(chain.exchanges)[0];
+                }
+                break;
+            }
+        }
+    }
+    if (!nativeTokenAddress){
+        throw Error("Unable to resolve a native token address for chain id", chainId, "and none given");
+    }
+    if (!fiatTokenAddress){
+        throw Error("Unable to resolve a default fiat token address for chain id", chainId, "and none given");
+    }
+    if (!defaultExchange){
+        throw Error("Unable to resolve a default fiat token address for chain id", chainId);
+    }
+    const [nativeToken, fiatToken] = await Promise.all([
+        getTokenInfoByAddress(nativeTokenAddress),
+        getTokenInfoByAddress(fiatTokenAddress)
+    ])
+
 
     async function getRecommendedGasGwei(){
         return ethers.utils.formatUnits(await sendOne(endpoint.provider, 'getGasPrice'), 'gwei');
@@ -191,7 +220,13 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, nativeToken
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
             return generalContractCall({endpoint, contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei});
         },
-        createTracker: async function({exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds}){
+        createTracker: async function({tokenAddress, comparatorAddress, comparatorIsFiat, exchange, quoteTokenQuantity, pollIntervalSeconds}){
+            if (!exchange){
+                exchange = defaultExchange;
+            }
+            if (!comparatorAddress){
+                comparatorAddress = nativeTokenAddress;
+            }
             return createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds});
         },
         addContractEventListener: function({contractAddress, abiFragment, listener}){
@@ -205,8 +240,18 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, nativeToken
         },
         removeLogListener: function({logFilter, listener}){
             return removeLogListener({endpoint, logFilter, listener});
-        }
+        },
+        nativeToFiatTracker: null,
     }
+
+    endpoint.nativeToFiatTracker = await endpoint.createTracker({
+        tokenAddress: nativeToken.address,
+        comparatorAddress: fiatToken.address,
+        comparatorIsFiat: true,
+    });
+
+    console.log('Endpoint added.');
+
     return endpoint;
 }
 
@@ -244,6 +289,7 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
 
     const contractAddressToInfoCache = chainDatabase[endpoint.chainId].contractAddressToInfoCache;
 
+    log('Resolving token and comparator info...');
     let token, comparator, pair;
     for (const cachedInfo of Object.values(contractAddressToInfoCache)){
         if (util.isHexEqual(tokenAddress, cachedInfo.address)){
@@ -351,6 +397,8 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         },
     };
 
+    log(`OK. Adding ${token.symbol}-${comparator.symbol} pair...`);
+
     const tracker = await common.createTrackerObject({
         backendName: 'ethers',
         token, comparator, pair,
@@ -374,42 +422,11 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         extraProperties: {
             chainId: endpoint.chainId,
 
-            estimateFeeOfBuyTokensWithExact: async function({privateKey, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee: true});
-            },
-            estimateFeeOfSellTokensForExact: async function({privateKey, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'sellTokensForExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee: true});
-            },
-            estimateFeeOfBuyExactTokens: async function({privateKey, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'buyExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee: true});
-            },
-            estimateFeeOfSellExactTokens: async function({privateKey, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee: true});
-            },
-
-
-            buyTokensWithExact: async function({privateKey, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            },
-            sellTokensForExact: async function({privateKey, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'sellTokensForExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            },
-            buyExactTokens: async function({privateKey, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'buyExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            },
-            sellExactTokens: async function({privateKey, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return swap({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            },
-            addLiquidity: async function({privateKey, tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return addOrRemoveliquidity({tracker, privateKey, method: 'addLiquidity', tokenQuantity, pairQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            },
-            removeLiquidity: async function({privateKey, pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-                return addOrRemoveliquidity({tracker, privateKey, method: 'removeLiquidity', pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
-            }
+            
         }
     });
     
-    
+    log(`${token.symbol}-${comparator.symbol} pair added.`);
     return tracker;
 }
 
@@ -702,179 +719,7 @@ async function getGasFeeSpent(endpoint, transactionResponse, transactionReceipt)
     return {gasFeeWeiRational, gasFeeWeiString, gasFeeFiatRational, gasFeeFiatString};
 }
 
-//untested - transactions stalling
-async function swap({tracker, privateKey, method, exactQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}){
-    if (!timeoutSecs){
-        timeoutSecs = 5 * 60;
-    }
-    let quantityString = `${exactQuantity}`.trim();
-    let slippagePercentString = `${slippagePercent}`;
-    let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
-    let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
 
-    const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
-    const isBuy = method === 'buyTokensWithExact' || method == 'buyExactTokens';
-
-    const wallet = new ethers.Wallet(privateKey, trackerPrivate.endpoint.provider);
-    const nonceManagerProvider = getNonceManagerProvider(wallet);
-    const routerContract = new ethers.Contract(
-        trackerPrivate.exchange.routerAddress, trackerPrivate.exchange.AbiSet.router, nonceManagerProvider
-    );
-    
-    const overrides = await checkGasPriceConstraint(trackerPrivate.endpoint, gasPercentModifierString, maxGasPriceGweiString);
-
-    const route = isBuy ? [tracker.comparator.address, tracker.token.address] : [tracker.token.address, tracker.comparator.address];
-    const routeIndexOfExact = method === 'buyTokensWithExact' || method === 'sellExactTokens' ? 0 : route.length-1;
-    const routeIndexOfInexact = routeIndexOfExact === 0 ? route.length-1 : 0;
-    const infoOfExact = util.isHexEqual(route[routeIndexOfExact], tracker.token.address) ? tracker.token : tracker.comparator;
-    const infoOfInexact = infoOfExact === tracker.token ? tracker.comparator : tracker.token;
-    
-    //exact amount
-    let walletBalanceOfExact;
-    let exactQuantityRational;
-    if (quantityString.endsWith('%')){
-        quantityString = util.trim(quantityString, '%');
-        walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
-        exactQuantityRational = bigRational(quantityString).divide(100).multiply(walletBalanceOfExact.rational);
-        log(`${infoOfExact.symbol} quantity: ${quantityString}% of ${walletBalanceOfExact.string} = ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
-    } else {
-        exactQuantityRational = bigRational(quantityString);
-        log(`${infoOfExact.symbol} quantity: ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
-    }
-
-    const exactQuantityBigNumber = BigNumber.from(exactQuantityRational.multiply(bigRational('10').pow(infoOfExact.decimals)).toDecimal(0));
-    const exactString = util.formatRational(exactQuantityRational, infoOfExact.decimals);
-    if (method === 'buyTokensWithExact' || method === 'sellExactTokens'){
-        if (!walletBalanceOfExact){
-            walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
-        }
-        if (exactQuantityRational.greater(walletBalanceOfExact.rational)){
-            throw Error(`Insufficient ${infoOfExact.symbol} balance`);
-        }
-    }
-
-    //slippage for inexact amount
-    slippagePercentString = util.trim(slippagePercentString.trim(), '%');
-    let expectedInexactAmountBigNumber;
-    if (routeIndexOfExact === 0){
-        const amountsOut = await trackerPrivate.endpoint.sendOne(routerContract, 'getAmountsOut', exactQuantityBigNumber, route);
-        expectedInexactAmountBigNumber = amountsOut[amountsOut.length - 1];
-    } else {
-        const amountsIn = await trackerPrivate.endpoint.sendOne(routerContract, 'getAmountsIn', exactQuantityBigNumber, route);
-        expectedInexactAmountBigNumber = amountsIn[0];
-    } 
-    const expectedInexactAmountRational = bigRational(expectedInexactAmountBigNumber).divide(bigRational('10').pow(infoOfInexact.decimals));
-    const expectedInexactAmountString = util.formatRational(expectedInexactAmountRational, infoOfInexact.decimals);
-
-    let inexactBoundsRational;
-    const slippageDeltaRational = bigRational(slippagePercentString).divide(100).multiply(expectedInexactAmountRational);
-    if (routeIndexOfExact === 0){
-        inexactBoundsRational = expectedInexactAmountRational.minus(slippageDeltaRational);
-    } else {
-        inexactBoundsRational = expectedInexactAmountRational.plus(slippageDeltaRational);
-    }
-    const inexactBoundsBigNumber = BigNumber.from(inexactBoundsRational.multiply(bigRational('10').pow(infoOfInexact.decimals)).toDecimal(0));
-    const inexactBoundsString = util.formatRational(inexactBoundsRational, infoOfInexact.decimals);
-
-    //router allowance
-    const addressToSpend = isBuy ? tracker.comparator.address : tracker.token.address;
-    const amountToSpendBigNumber = routeIndexOfExact === 0 ? exactQuantityBigNumber : inexactBoundsBigNumber;
-    await checkAllowance({
-        endpoint: trackerPrivate.endpoint, 
-        wallet: wallet, 
-        addressToAllow: trackerPrivate.exchange.routerAddress,
-        tokenAddress: addressToSpend, 
-        requiredAmount: amountToSpendBigNumber
-    });
-    
-    log('Slippage: ' + slippagePercentString + '%');
-    const beginning = justReturnEstimatedGasFee ? 'Simulating a swap of' : 'Swapping';
-    if (routeIndexOfExact === 0){
-        log(`${beginning} exactly ${exactString} ${infoOfExact.symbol} for at least ${inexactBoundsString} ${infoOfInexact.symbol} (expecting ${expectedInexactAmountString})...`);
-    } else {
-        log(`${beginning} at most ${inexactBoundsString} ${infoOfInexact.symbol} (expecting ${expectedInexactAmountString}) for exactly ${exactString} ${infoOfExact.symbol} ...`);
-    }
-
-    if (method === 'buyExactTokens' || method === 'sellTokensForExact'){
-        const walletBalanceOfInexact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfInexact.address, walletAddress: wallet.address});
-        if (inexactBoundsRational.greater(walletBalanceOfInexact.rational)){
-            throw Error(`Balance of ${infoOfInexact.symbol} (${walletBalanceOfInexact.string}) is insufficient to meet the upper bounds of transaction.`);
-        }
-    }
-
-    const functionToCall = trackerPrivate.endpoint[justReturnEstimatedGasFee ? 'estimateMinimumGasLimit' : 'sendTransaction'];
-    //console.log(overrides);
-    
-    //send transaction
-    const deadline = Math.floor(Date.now() / 1000) + timeoutSecs; //deadline is unix timestamp (seconds, not ms)
-    let transactionResponse;
-    let methodUsed;
-    if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
-        methodUsed = 'swapExactETHForTokens';
-        overrides.value = exactQuantityBigNumber;
-        transactionResponse =  await functionToCall(
-            routerContract, methodUsed, inexactBoundsBigNumber, route, wallet.address, deadline, 
-            overrides
-        );
-    } else if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
-        methodUsed = 'swapExactTokensForETH';
-        transactionResponse = await functionToCall(
-            routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides   
-        );
-    } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
-        methodUsed = 'swapTokensForExactETH';
-        transactionResponse = await functionToCall(
-            routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides
-        );
-    } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
-        methodUsed = 'swapETHForExactTokens';
-        overrides.value = inexactBoundsBigNumber;
-        transactionResponse = await functionToCall(
-            routerContract, methodUsed, exactQuantityBigNumber, route, wallet.address, deadline, overrides
-        );
-    } else {
-        methodUsed = routeIndexOfExact === 0 ? 'swapExactTokensForTokens' : 'swapTokensForExactTokens';
-        transactionResponse = await functionToCall(
-            routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, 
-            wallet.address, deadline, overrides
-        );
-    }
-
-
-    if (justReturnEstimatedGasFee){
-        let gasFee;
-        if (overrides.gasPrice){
-            gasFee = bigRational(overrides.gasPrice.mul(transactionResponse)).divide(bigRational('10').pow(trackerPrivate.endpoint.nativeToken.decimals));
-        } else {
-            const estimatePerGas = bigRational(overrides.maxFeePerGas).minus(overrides.maxPriorityFeePerGas).divide(2).add(overrides.maxPriorityFeePerGas);
-            gasFee = estimatePerGas.multiply(transactionResponse).divide(bigRational('10').pow(trackerPrivate.endpoint.nativeToken.decimals));
-        }
-        return util.formatRational(gasFee, trackerPrivate.endpoint.nativeToken.decimals);
-    }
-
-
-    log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`);
-    const transactionReceipt = await waitForTransaction(trackerPrivate.endpoint, transactionResponse);
-    let swapLog;
-    for (const log of transactionReceipt.logs){
-        if (util.isHexEqual(log.topics[0], trackerPrivate.swapEventFilter.topics[0]) && util.isHexEqual(log.address, trackerPrivate.swapEventFilter.address[0])){
-            swapLog = log;
-            break;
-        }
-    }
-    if (!swapLog){
-        throw Error("No swap log found in receipt for swap transaction:" + JSON.stringify(transactionReceipt));
-    }
-    log('OK! TX: ' + transactionReceipt.transactionHash);
-
-    const parsedLog = await getParsedSwapLog(tracker, swapLog);
-    log(`${parsedLog.action} ${parsedLog.tokenQuantity.string} ${tracker.token.symbol} FOR ${parsedLog.comparatorQuantity.string} ${tracker.comparator.symbol} ($${parsedLog.fiatQuantity.string})`);
-
-    return {
-        ...parsedLog,
-        ...(await getGasFeeSpent(trackerPrivate.endpoint, transactionResponse, transactionReceipt))
-    }
-}
 
 
 
@@ -930,245 +775,6 @@ async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, qu
         ...(await getGasFeeSpent(endpoint, transactionResponse, transactionReceipt))
     }
 }
-
-
-
-//untested!
-//method === addLiquidity -> pairQuantity not needed
-//method === removeLiquidity -> tokenQuantity and minNativeReserved not needed
-async function addOrRemoveliquidity({tracker, privateKey, method, tokenQuantity, pairQuantity, minNativeReserved,
-slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-    const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
-    const endpoint = trackerPrivate.endpoint;
-    const {token, comparator, pair} = tracker;
-    const wallet = new ethers.Wallet(privateKey, endpoint.provider);
-    const nonceManagerProvider = getNonceManagerProvider(wallet);
-    const formatRational = util.formatRational;
-
-    let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
-    let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
-    
-    const routerContract = new ethers.Contract(
-        trackerPrivate.exchange.routerAddress, trackerPrivate.exchange.AbiSet.router, nonceManagerProvider
-    );
-    const pairContract = trackerPrivate.pairContract;
-    const slippageProportionRational = bigRational(slippagePercent).divide(100);
-    const [overrides, reserveInfo] = await Promise.all([
-        await checkGasPriceConstraint(trackerPrivate.endpoint, gasPercentModifierString, maxGasPriceGweiString),
-        await getQuote({tracker}),
-    ]);
-
-    
-    let transactionResponse;
-    const retObject = {};
-    if (method === 'addLiquidity'){
-        let tokenQuantityString = `${tokenQuantity}`.trim();
-        let tokenQuantityIsPercentage = false;
-        if (tokenQuantityString.endsWith('%')){
-            tokenQuantityIsPercentage = true;
-            tokenQuantityString = util.trim(tokenQuantityString, '%');
-        }
-        const minNativeReservedRational = bigRational(minNativeReserved ? minNativeReservedRational : 0);
-        const [walletBalanceOfToken, walletBalanceOfComparator] = await Promise.all([
-            endpoint.getBalance({tokenAddress: token.address, walletAddress: wallet.address}),
-            endpoint.getBalance({tokenAddress: comparator.address, walletAddress: wallet.address})
-        ]);
-
-        let tokenQuantityRational;
-        if (tokenQuantityIsPercentage){
-            tokenQuantityRational = bigRational(tokenQuantityString).divide(100).multiply(walletBalanceOfToken.rational);
-            log(`${token.symbol} quantity: ${tokenQuantityString}% of ${walletBalanceOfToken.string} = ${util.formatRational(tokenQuantityRational, token.decimals)}`);
-        } else {
-            tokenQuantityRational = bigRational(tokenQuantityString);
-            log(`${token.symbol} quantity: ${util.formatRational(tokenQuantityRational, token.decimals)}`);
-        }
-        if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
-            const leftover = walletBalanceOfToken.rational.minus(tokenQuantityRational);
-            if (leftover.lesser(minNativeReservedRational)){
-                tokenQuantityRational = walletBalanceOfToken.rational.minus(minNativeReservedRational);
-                tokenQuantityString = util.formatRational(tokenQuantityRational, token.decimals);
-                if (tokenQuantityRational.isNegative()){
-                    throw Error(`${token.symbol} balance is less than required to leave reserved`);
-                } else {
-                    log(`${token.symbol} quantity reduced (to leave minimum native reserve): ${tokenQuantityString}`);
-                }
-            }
-        }
-        if (tokenQuantityRational.greater(walletBalanceOfToken.rational)){
-            throw Error(`Insufficient ${token.symbol} balance`);
-        }
-
-        let comparatorQuantityRational = tokenQuantityRational.multiply(reserveInfo.tokenPerComparatorRational);
-        log(`${comparator.symbol} quantity: ${formatRational(comparatorQuantityRational, comparator.decimals)}`);
-        
-        let leftoverComparatorRational = walletBalanceOfComparator.rational.minus(comparatorQuantityRational);
-        if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
-            if (walletBalanceOfComparator.rational.minus(minNativeReservedRational).isNegative()){
-                throw Error(`${comparator.symbol} balance is less than required to leave reserved`);
-            }
-            leftoverComparatorRational = leftover.minus(minNativeReservedRational);
-        }
-        if (leftoverComparatorRational.isNegative()){
-            const differenceRational = leftoverComparatorRational.abs();
-            const differenceProportionRational = differenceRational.divide(comparatorQuantityRational)
-            log(`Reducing quantities to match comparator balance constraints...`);
-            tokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(differenceProportionRational));
-            tokenQuantityString = util.formatRational(tokenQuantityRational, token.decimals);
-            comparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(differenceProportionRational));
-            log(`${token.symbol} quantity: ${tokenQuantityRational}`);
-            log(`${comparator.symbol} quantity: ${formatRational(comparatorQuantityRational, comparator.decimals)}`);
-        }
-        
-        //ok!
-        const tokenQuantityBigNumber = BigNumber.from(tokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
-        const minTokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(slippageProportionRational));
-        const mintokenQuantityBigNumber = BigNumber.from(minTokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
-        await checkAllowance({
-            endpoint, 
-            wallet: wallet, 
-            addressToAllow: trackerPrivate.exchange.routerAddress,
-            tokenAddress: token.address, 
-            requiredAmount: tokenQuantityBigNumber
-        });
-
-        const comparatorQuantityBigNumber = BigNumber.from(comparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
-        const minComparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(slippageProportionRational));
-        const minComparatorQuantityBigNumber = BigNumber.from(minComparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
-        await checkAllowance({
-            endpoint, 
-            wallet: wallet, 
-            addressToAllow: trackerPrivate.exchange.routerAddress,
-            tokenAddress: comparator.address, 
-            requiredAmount: comparatorQuantityBigNumber
-        });
-        
-        
-        const tokenPart = `${tokenQuantityString} ${token.symbol} (min ${formatRational(minTokenQuantityRational, token.decimals)})`;
-        const comparatorPart = `${formatRational(comparatorQuantityRational, comparator.decimals)} ${comparator.symbol} (min ${formatRational(minComparatorQuantityRational, comparator.decimals)})`;
-        const intentionStatement = `Adding ${tokenPart} and ${comparatorPart} to liquidity through ${trackerPrivate.exchange.routerAddress}`;
-        log(intentionStatement);
-
-        //finally, add liquidity
-        const deadline = Math.floor(Date.now() / 1000) + Number(timeoutSecs); //deadline is unix timestamp (seconds, not ms)
-        if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
-            overrides.value = tokenQuantityBigNumber;
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', comparator.address, 
-                comparatorQuantityBigNumber, minComparatorQuantityBigNumber,
-                mintokenQuantityBigNumber, wallet.address, deadline, overrides
-            )
-        } else if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
-            overrides.value = comparatorQuantityBigNumber;
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', token.address, 
-                tokenQuantityBigNumber, mintokenQuantityBigNumber,
-                minComparatorQuantityBigNumber, wallet.address, deadline, overrides
-            )
-        } else {
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', token.address, comparator.address,
-                tokenQuantityBigNumber, comparatorQuantityBigNumber,
-                mintokenQuantityBigNumber, minComparatorQuantityBigNumber,
-                wallet.address, deadline, overrides
-            )
-        }
-
-    } else if (method === 'removeLiquidity') {
-        let pairQuantityString = `${pairQuantity}`.trim();
-        let pairQuantityIsPercentage = false;
-        if (pairQuantityString.endsWith('%')){
-            pairQuantityIsPercentage = true;
-            pairQuantityString = util.trim(pairQuantityString, '%');
-        }
-
-        log(`Calculating LP ratio...`);
-        const totalPairSupplyBigNumber = await endpoint.sendOne(pairContract, 'totalSupply');
-        const totalSupplyRational = bigRational(totalPairSupplyBigNumber.toString()).divide(bigRational('10').pow(pair.decimals));
-        const tokenPerLPRational = reserveInfo.reserveTokenRational.divide(totalSupplyRational);
-        const comparatorPerLPRational = reserveInfo.reserveComparatorRational.divide(totalSupplyRational);
-
-         const walletbalanceOfPair = await endpoint.getBalance({tokenAddress: pair.address, walletAddress: wallet.address})
-
-        let pairQuantityRational = bigRational(pairQuantityString);
-        if (pairQuantityIsPercentage){
-            pairQuantityRational = pairQuantityRational.divide(100).multiply(walletbalanceOfPair.rational);
-            log(`${token.symbol} quantity: ${pairQuantityString}% of ${walletbalanceOfPair.string} = ${util.formatRational(pairQuantityRational, pair.decimals)}`);
-        } else {
-            log(`${pair.symbol} quantity: ${formatRational(pairQuantityRational, pair.decimals)}`);
-        }
-        pairQuantityString = formatRational(pairQuantityRational, pair.decimals);
-        
-        if (pairQuantityRational.greater(walletbalanceOfPair)){
-            throw Error(`Insufficient ${pair.symbol} balance`);
-        }
-
-        const pairQuantityBigNumber = BigNumber.from(pairQuantityRational.multiply(bigRational('10').pow(node.pairDecimals)).toDecimal(0));
-        await checkAllowance({
-            endpoint, 
-            wallet: wallet, 
-            addressToAllow: trackerPrivate.exchange.routerAddress,
-            tokenAddress: pair.address, 
-            requiredAmount: pairQuantityBigNumber
-        });
-
-        const tokenQuantityRational = pairQuantityRational.multiply(tokenPerLPRational);
-        const minTokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(slippageProportionRational));
-        const minTokenQuantityBigNumber = BigNumber.from(minTokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
-
-        const comparatorQuantityRational = pairQuantityRational.multiply(comparatorPerLPRational);
-        const minComparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(slippageProportionRational));
-        const minComparatorQuantityBigNumber = BigNumber.from(minComparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
-
-        const tokenPart = `${formatRational(minTokenQuantityRational, token.decimals)} ${token.symbol}`;
-        const comparatorPart = `${formatRational(minComparatorQuantityRational, comparator.decimals)} ${comparator.symbol}`;
-        const intentionStatement =  `Splitting ${pair.symbol} into minimum ${tokenPart} and ${comparatorPart} through ${trackerPrivate.exchange.routerAddress}`;
-        log(intentionStatement);
-
-        //finally, remove liquidity
-        const deadline = Math.floor(Date.now() / 1000) + Number(timeoutSecs); //deadline is unix timestamp (seconds, not ms)
-        if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', comparator.address, 
-                pairQuantityBigNumber, minComparatorQuantityBigNumber, minTokenQuantityBigNumber, 
-                wallet.address, deadline, overrides
-            );
-        } else if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', token.address, 
-                pairQuantityBigNumber, minTokenQuantityBigNumber, minComparatorQuantityBigNumber, 
-                wallet.address, deadline, overrides
-            )
-        } else {
-            transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', token.address, comparator.address,
-                pairQuantityBigNumber, minTokenQuantityBigNumber, minComparatorQuantityBigNumber,
-                wallet.address, deadline, overrides
-            )
-        }
-    }
-
-    log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`)
-    const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);
-    log('OK! TX: ' + transactionReceipt.transactionHash);
-
-    return {
-        transactionHash: transactionReceipt.transactionHash,
-        ...(await getGasFeeSpent(endpoint, transactionResponse, transactionReceipt))
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1391,4 +997,479 @@ function createWalletFromPrivateKey({privateKey}){
 }
 
 
-export default {...ethersBase, createWalletFromPrivateKey, createJsonRpcEndpoint};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const UniswapV2 = (() =>{
+    async function swapUniswapV2({tracker, privateKey, method, exactQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}){
+        if (!timeoutSecs){
+            timeoutSecs = 5 * 60;
+        }
+        let quantityString = `${exactQuantity}`.trim();
+        let slippagePercentString = `${slippagePercent}`;
+        let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
+        let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
+    
+        const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
+        const isBuy = method === 'buyTokensWithExact' || method == 'buyExactTokens';
+    
+        const wallet = new ethers.Wallet(privateKey, trackerPrivate.endpoint.provider);
+        const nonceManagerProvider = getNonceManagerProvider(wallet);
+        const routerContract = new ethers.Contract(
+            trackerPrivate.exchange.routerAddress, trackerPrivate.exchange.AbiSet.router, nonceManagerProvider
+        );
+        
+        const overrides = await checkGasPriceConstraint(trackerPrivate.endpoint, gasPercentModifierString, maxGasPriceGweiString);
+    
+        const route = isBuy ? [tracker.comparator.address, tracker.token.address] : [tracker.token.address, tracker.comparator.address];
+        const routeIndexOfExact = method === 'buyTokensWithExact' || method === 'sellExactTokens' ? 0 : route.length-1;
+        const routeIndexOfInexact = routeIndexOfExact === 0 ? route.length-1 : 0;
+        const infoOfExact = util.isHexEqual(route[routeIndexOfExact], tracker.token.address) ? tracker.token : tracker.comparator;
+        const infoOfInexact = infoOfExact === tracker.token ? tracker.comparator : tracker.token;
+        
+        //exact amount
+        let walletBalanceOfExact;
+        let exactQuantityRational;
+        if (quantityString.endsWith('%')){
+            quantityString = util.trim(quantityString, '%');
+            walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
+            exactQuantityRational = bigRational(quantityString).divide(100).multiply(walletBalanceOfExact.rational);
+            log(`${infoOfExact.symbol} quantity: ${quantityString}% of ${walletBalanceOfExact.string} = ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
+        } else {
+            exactQuantityRational = bigRational(quantityString);
+            log(`${infoOfExact.symbol} quantity: ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
+        }
+    
+        const exactQuantityBigNumber = BigNumber.from(exactQuantityRational.multiply(bigRational('10').pow(infoOfExact.decimals)).toDecimal(0));
+        const exactString = util.formatRational(exactQuantityRational, infoOfExact.decimals);
+        if (method === 'buyTokensWithExact' || method === 'sellExactTokens'){
+            if (!walletBalanceOfExact){
+                walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
+            }
+            if (exactQuantityRational.greater(walletBalanceOfExact.rational)){
+                throw Error(`Insufficient ${infoOfExact.symbol} balance`);
+            }
+        }
+    
+        //slippage for inexact amount
+        slippagePercentString = util.trim(slippagePercentString.trim(), '%');
+        let expectedInexactAmountBigNumber;
+        if (routeIndexOfExact === 0){
+            const amountsOut = await trackerPrivate.endpoint.sendOne(routerContract, 'getAmountsOut', exactQuantityBigNumber, route);
+            expectedInexactAmountBigNumber = amountsOut[amountsOut.length - 1];
+        } else {
+            const amountsIn = await trackerPrivate.endpoint.sendOne(routerContract, 'getAmountsIn', exactQuantityBigNumber, route);
+            expectedInexactAmountBigNumber = amountsIn[0];
+        } 
+        const expectedInexactAmountRational = bigRational(expectedInexactAmountBigNumber).divide(bigRational('10').pow(infoOfInexact.decimals));
+        const expectedInexactAmountString = util.formatRational(expectedInexactAmountRational, infoOfInexact.decimals);
+    
+        let inexactBoundsRational;
+        const slippageDeltaRational = bigRational(slippagePercentString).divide(100).multiply(expectedInexactAmountRational);
+        if (routeIndexOfExact === 0){
+            inexactBoundsRational = expectedInexactAmountRational.minus(slippageDeltaRational);
+        } else {
+            inexactBoundsRational = expectedInexactAmountRational.plus(slippageDeltaRational);
+        }
+        const inexactBoundsBigNumber = BigNumber.from(inexactBoundsRational.multiply(bigRational('10').pow(infoOfInexact.decimals)).toDecimal(0));
+        const inexactBoundsString = util.formatRational(inexactBoundsRational, infoOfInexact.decimals);
+    
+        //router allowance
+        const addressToSpend = isBuy ? tracker.comparator.address : tracker.token.address;
+        const amountToSpendBigNumber = routeIndexOfExact === 0 ? exactQuantityBigNumber : inexactBoundsBigNumber;
+        await checkAllowance({
+            endpoint: trackerPrivate.endpoint, 
+            wallet: wallet, 
+            addressToAllow: trackerPrivate.exchange.routerAddress,
+            tokenAddress: addressToSpend, 
+            requiredAmount: amountToSpendBigNumber
+        });
+        
+        log('Slippage: ' + slippagePercentString + '%');
+        const beginning = justReturnEstimatedGasFee ? 'Simulating a swap of' : 'Swapping';
+        if (routeIndexOfExact === 0){
+            log(`${beginning} exactly ${exactString} ${infoOfExact.symbol} for at least ${inexactBoundsString} ${infoOfInexact.symbol} (expecting ${expectedInexactAmountString})...`);
+        } else {
+            log(`${beginning} at most ${inexactBoundsString} ${infoOfInexact.symbol} (expecting ${expectedInexactAmountString}) for exactly ${exactString} ${infoOfExact.symbol} ...`);
+        }
+    
+        if (method === 'buyExactTokens' || method === 'sellTokensForExact'){
+            const walletBalanceOfInexact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfInexact.address, walletAddress: wallet.address});
+            if (inexactBoundsRational.greater(walletBalanceOfInexact.rational)){
+                throw Error(`Balance of ${infoOfInexact.symbol} (${walletBalanceOfInexact.string}) is insufficient to meet the upper bounds of transaction.`);
+            }
+        }
+    
+        const functionToCall = trackerPrivate.endpoint[justReturnEstimatedGasFee ? 'estimateMinimumGasLimit' : 'sendTransaction'];
+        //console.log(overrides);
+        
+        //send transaction
+        const deadline = Math.floor(Date.now() / 1000) + timeoutSecs; //deadline is unix timestamp (seconds, not ms)
+        let transactionResponse;
+        let methodUsed;
+        if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
+            methodUsed = 'swapExactETHForTokens';
+            overrides.value = exactQuantityBigNumber;
+            transactionResponse =  await functionToCall(
+                routerContract, methodUsed, inexactBoundsBigNumber, route, wallet.address, deadline, 
+                overrides
+            );
+        } else if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
+            methodUsed = 'swapExactTokensForETH';
+            transactionResponse = await functionToCall(
+                routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides   
+            );
+        } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
+            methodUsed = 'swapTokensForExactETH';
+            transactionResponse = await functionToCall(
+                routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides
+            );
+        } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
+            methodUsed = 'swapETHForExactTokens';
+            overrides.value = inexactBoundsBigNumber;
+            transactionResponse = await functionToCall(
+                routerContract, methodUsed, exactQuantityBigNumber, route, wallet.address, deadline, overrides
+            );
+        } else {
+            methodUsed = routeIndexOfExact === 0 ? 'swapExactTokensForTokens' : 'swapTokensForExactTokens';
+            transactionResponse = await functionToCall(
+                routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, 
+                wallet.address, deadline, overrides
+            );
+        }
+    
+    
+        if (justReturnEstimatedGasFee){
+            let gasFee;
+            if (overrides.gasPrice){
+                gasFee = bigRational(overrides.gasPrice.mul(transactionResponse)).divide(bigRational('10').pow(trackerPrivate.endpoint.nativeToken.decimals));
+            } else {
+                const estimatePerGas = bigRational(overrides.maxFeePerGas).minus(overrides.maxPriorityFeePerGas).divide(2).add(overrides.maxPriorityFeePerGas);
+                gasFee = estimatePerGas.multiply(transactionResponse).divide(bigRational('10').pow(trackerPrivate.endpoint.nativeToken.decimals));
+            }
+            return util.formatRational(gasFee, trackerPrivate.endpoint.nativeToken.decimals);
+        }
+    
+    
+        log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`);
+        const transactionReceipt = await waitForTransaction(trackerPrivate.endpoint, transactionResponse);
+        let swapLog;
+        for (const log of transactionReceipt.logs){
+            if (util.isHexEqual(log.topics[0], trackerPrivate.swapEventFilter.topics[0]) && util.isHexEqual(log.address, trackerPrivate.swapEventFilter.address[0])){
+                swapLog = log;
+                break;
+            }
+        }
+        if (!swapLog){
+            throw Error("No swap log found in receipt for swap transaction:" + JSON.stringify(transactionReceipt));
+        }
+        log('OK! TX: ' + transactionReceipt.transactionHash);
+    
+        const parsedLog = await getParsedSwapLog(tracker, swapLog);
+        log(`${parsedLog.action} ${parsedLog.tokenQuantity.string} ${tracker.token.symbol} FOR ${parsedLog.comparatorQuantity.string} ${tracker.comparator.symbol} ($${parsedLog.fiatQuantity.string})`);
+    
+        return {
+            ...parsedLog,
+            ...(await getGasFeeSpent(trackerPrivate.endpoint, transactionResponse, transactionReceipt))
+        }
+    }
+    
+
+
+
+
+    //untested!
+    //method === addLiquidity -> pairQuantity not needed
+    //method === removeLiquidity -> tokenQuantity and minNativeReserved not needed
+    async function addOrRemoveliquidityUniswapV2({tracker, privateKey, method, tokenQuantity, pairQuantity, minNativeReserved,
+    slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
+        const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
+        const endpoint = trackerPrivate.endpoint;
+        const {token, comparator, pair} = tracker;
+        const wallet = new ethers.Wallet(privateKey, endpoint.provider);
+        const nonceManagerProvider = getNonceManagerProvider(wallet);
+        const formatRational = util.formatRational;
+    
+        let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
+        let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
+        
+        const routerContract = new ethers.Contract(
+            trackerPrivate.exchange.routerAddress, trackerPrivate.exchange.AbiSet.router, nonceManagerProvider
+        );
+        const pairContract = trackerPrivate.pairContract;
+        const slippageProportionRational = bigRational(slippagePercent).divide(100);
+        const [overrides, reserveInfo] = await Promise.all([
+            await checkGasPriceConstraint(trackerPrivate.endpoint, gasPercentModifierString, maxGasPriceGweiString),
+            await getQuote({tracker}),
+        ]);
+    
+        
+        let transactionResponse;
+        const retObject = {};
+        if (method === 'addLiquidity'){
+            let tokenQuantityString = `${tokenQuantity}`.trim();
+            let tokenQuantityIsPercentage = false;
+            if (tokenQuantityString.endsWith('%')){
+                tokenQuantityIsPercentage = true;
+                tokenQuantityString = util.trim(tokenQuantityString, '%');
+            }
+            const minNativeReservedRational = bigRational(minNativeReserved ? minNativeReservedRational : 0);
+            const [walletBalanceOfToken, walletBalanceOfComparator] = await Promise.all([
+                endpoint.getBalance({tokenAddress: token.address, walletAddress: wallet.address}),
+                endpoint.getBalance({tokenAddress: comparator.address, walletAddress: wallet.address})
+            ]);
+    
+            let tokenQuantityRational;
+            if (tokenQuantityIsPercentage){
+                tokenQuantityRational = bigRational(tokenQuantityString).divide(100).multiply(walletBalanceOfToken.rational);
+                log(`${token.symbol} quantity: ${tokenQuantityString}% of ${walletBalanceOfToken.string} = ${util.formatRational(tokenQuantityRational, token.decimals)}`);
+            } else {
+                tokenQuantityRational = bigRational(tokenQuantityString);
+                log(`${token.symbol} quantity: ${util.formatRational(tokenQuantityRational, token.decimals)}`);
+            }
+            if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
+                const leftover = walletBalanceOfToken.rational.minus(tokenQuantityRational);
+                if (leftover.lesser(minNativeReservedRational)){
+                    tokenQuantityRational = walletBalanceOfToken.rational.minus(minNativeReservedRational);
+                    tokenQuantityString = util.formatRational(tokenQuantityRational, token.decimals);
+                    if (tokenQuantityRational.isNegative()){
+                        throw Error(`${token.symbol} balance is less than required to leave reserved`);
+                    } else {
+                        log(`${token.symbol} quantity reduced (to leave minimum native reserve): ${tokenQuantityString}`);
+                    }
+                }
+            }
+            if (tokenQuantityRational.greater(walletBalanceOfToken.rational)){
+                throw Error(`Insufficient ${token.symbol} balance`);
+            }
+    
+            let comparatorQuantityRational = tokenQuantityRational.multiply(reserveInfo.tokenPerComparatorRational);
+            log(`${comparator.symbol} quantity: ${formatRational(comparatorQuantityRational, comparator.decimals)}`);
+            
+            let leftoverComparatorRational = walletBalanceOfComparator.rational.minus(comparatorQuantityRational);
+            if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
+                if (walletBalanceOfComparator.rational.minus(minNativeReservedRational).isNegative()){
+                    throw Error(`${comparator.symbol} balance is less than required to leave reserved`);
+                }
+                leftoverComparatorRational = leftover.minus(minNativeReservedRational);
+            }
+            if (leftoverComparatorRational.isNegative()){
+                const differenceRational = leftoverComparatorRational.abs();
+                const differenceProportionRational = differenceRational.divide(comparatorQuantityRational)
+                log(`Reducing quantities to match comparator balance constraints...`);
+                tokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(differenceProportionRational));
+                tokenQuantityString = util.formatRational(tokenQuantityRational, token.decimals);
+                comparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(differenceProportionRational));
+                log(`${token.symbol} quantity: ${tokenQuantityRational}`);
+                log(`${comparator.symbol} quantity: ${formatRational(comparatorQuantityRational, comparator.decimals)}`);
+            }
+            
+            //ok!
+            const tokenQuantityBigNumber = BigNumber.from(tokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
+            const minTokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(slippageProportionRational));
+            const mintokenQuantityBigNumber = BigNumber.from(minTokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
+            await checkAllowance({
+                endpoint, 
+                wallet: wallet, 
+                addressToAllow: trackerPrivate.exchange.routerAddress,
+                tokenAddress: token.address, 
+                requiredAmount: tokenQuantityBigNumber
+            });
+    
+            const comparatorQuantityBigNumber = BigNumber.from(comparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
+            const minComparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(slippageProportionRational));
+            const minComparatorQuantityBigNumber = BigNumber.from(minComparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
+            await checkAllowance({
+                endpoint, 
+                wallet: wallet, 
+                addressToAllow: trackerPrivate.exchange.routerAddress,
+                tokenAddress: comparator.address, 
+                requiredAmount: comparatorQuantityBigNumber
+            });
+            
+            
+            const tokenPart = `${tokenQuantityString} ${token.symbol} (min ${formatRational(minTokenQuantityRational, token.decimals)})`;
+            const comparatorPart = `${formatRational(comparatorQuantityRational, comparator.decimals)} ${comparator.symbol} (min ${formatRational(minComparatorQuantityRational, comparator.decimals)})`;
+            const intentionStatement = `Adding ${tokenPart} and ${comparatorPart} to liquidity through ${trackerPrivate.exchange.routerAddress}`;
+            log(intentionStatement);
+    
+            //finally, add liquidity
+            const deadline = Math.floor(Date.now() / 1000) + Number(timeoutSecs); //deadline is unix timestamp (seconds, not ms)
+            if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
+                overrides.value = tokenQuantityBigNumber;
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', comparator.address, 
+                    comparatorQuantityBigNumber, minComparatorQuantityBigNumber,
+                    mintokenQuantityBigNumber, wallet.address, deadline, overrides
+                )
+            } else if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
+                overrides.value = comparatorQuantityBigNumber;
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', token.address, 
+                    tokenQuantityBigNumber, mintokenQuantityBigNumber,
+                    minComparatorQuantityBigNumber, wallet.address, deadline, overrides
+                )
+            } else {
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'addLiquidityETH', token.address, comparator.address,
+                    tokenQuantityBigNumber, comparatorQuantityBigNumber,
+                    mintokenQuantityBigNumber, minComparatorQuantityBigNumber,
+                    wallet.address, deadline, overrides
+                )
+            }
+    
+        } else if (method === 'removeLiquidity') {
+            let pairQuantityString = `${pairQuantity}`.trim();
+            let pairQuantityIsPercentage = false;
+            if (pairQuantityString.endsWith('%')){
+                pairQuantityIsPercentage = true;
+                pairQuantityString = util.trim(pairQuantityString, '%');
+            }
+    
+            log(`Calculating LP ratio...`);
+            const totalPairSupplyBigNumber = await endpoint.sendOne(pairContract, 'totalSupply');
+            const totalSupplyRational = bigRational(totalPairSupplyBigNumber.toString()).divide(bigRational('10').pow(pair.decimals));
+            const tokenPerLPRational = reserveInfo.reserveTokenRational.divide(totalSupplyRational);
+            const comparatorPerLPRational = reserveInfo.reserveComparatorRational.divide(totalSupplyRational);
+    
+             const walletbalanceOfPair = await endpoint.getBalance({tokenAddress: pair.address, walletAddress: wallet.address})
+    
+            let pairQuantityRational = bigRational(pairQuantityString);
+            if (pairQuantityIsPercentage){
+                pairQuantityRational = pairQuantityRational.divide(100).multiply(walletbalanceOfPair.rational);
+                log(`${token.symbol} quantity: ${pairQuantityString}% of ${walletbalanceOfPair.string} = ${util.formatRational(pairQuantityRational, pair.decimals)}`);
+            } else {
+                log(`${pair.symbol} quantity: ${formatRational(pairQuantityRational, pair.decimals)}`);
+            }
+            pairQuantityString = formatRational(pairQuantityRational, pair.decimals);
+            
+            if (pairQuantityRational.greater(walletbalanceOfPair)){
+                throw Error(`Insufficient ${pair.symbol} balance`);
+            }
+    
+            const pairQuantityBigNumber = BigNumber.from(pairQuantityRational.multiply(bigRational('10').pow(node.pairDecimals)).toDecimal(0));
+            await checkAllowance({
+                endpoint, 
+                wallet: wallet, 
+                addressToAllow: trackerPrivate.exchange.routerAddress,
+                tokenAddress: pair.address, 
+                requiredAmount: pairQuantityBigNumber
+            });
+    
+            const tokenQuantityRational = pairQuantityRational.multiply(tokenPerLPRational);
+            const minTokenQuantityRational = tokenQuantityRational.minus(tokenQuantityRational.multiply(slippageProportionRational));
+            const minTokenQuantityBigNumber = BigNumber.from(minTokenQuantityRational.multiply(bigRational('10').pow(token.decimals)).toDecimal(0));
+    
+            const comparatorQuantityRational = pairQuantityRational.multiply(comparatorPerLPRational);
+            const minComparatorQuantityRational = comparatorQuantityRational.minus(comparatorQuantityRational.multiply(slippageProportionRational));
+            const minComparatorQuantityBigNumber = BigNumber.from(minComparatorQuantityRational.multiply(bigRational('10').pow(comparator.decimals)).toDecimal(0));
+    
+            const tokenPart = `${formatRational(minTokenQuantityRational, token.decimals)} ${token.symbol}`;
+            const comparatorPart = `${formatRational(minComparatorQuantityRational, comparator.decimals)} ${comparator.symbol}`;
+            const intentionStatement =  `Splitting ${pair.symbol} into minimum ${tokenPart} and ${comparatorPart} through ${trackerPrivate.exchange.routerAddress}`;
+            log(intentionStatement);
+    
+            //finally, remove liquidity
+            const deadline = Math.floor(Date.now() / 1000) + Number(timeoutSecs); //deadline is unix timestamp (seconds, not ms)
+            if (util.isHexEqual(token.address, endpoint.nativeToken.address)){
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', comparator.address, 
+                    pairQuantityBigNumber, minComparatorQuantityBigNumber, minTokenQuantityBigNumber, 
+                    wallet.address, deadline, overrides
+                );
+            } else if (util.isHexEqual(comparator.address, endpoint.nativeToken.address)){
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', token.address, 
+                    pairQuantityBigNumber, minTokenQuantityBigNumber, minComparatorQuantityBigNumber, 
+                    wallet.address, deadline, overrides
+                )
+            } else {
+                transactionResponse = await endpoint.sendTransaction(routerContract, 'removeLiquidityETH', token.address, comparator.address,
+                    pairQuantityBigNumber, minTokenQuantityBigNumber, minComparatorQuantityBigNumber,
+                    wallet.address, deadline, overrides
+                )
+            }
+        }
+    
+        log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`)
+        const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);
+        log('OK! TX: ' + transactionReceipt.transactionHash);
+    
+        return {
+            transactionHash: transactionReceipt.transactionHash,
+            ...(await getGasFeeSpent(endpoint, transactionResponse, transactionReceipt))
+        }
+    }
+
+
+
+
+    return {
+        buyTokensWithExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        sellTokensForExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'sellTokensForExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        buyExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'buyExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        sellExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        addLiquidity: ({privateKey, tracker, tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'addLiquidity', tokenQuantity, pairQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        removeLiquidity: ({privateKey, tracker, pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
+            return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'removeLiquidity', pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        }
+    }
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export default {...ethersBase, createWalletFromPrivateKey, createJsonRpcEndpoint, UniswapV2};

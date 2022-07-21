@@ -15,11 +15,25 @@ async function raceToResolve(keytoFunction){
 }
 
 
+const GENERIC_LOGGING_LISTENER = (swapDetails, tracker) => {
+    console.log(
+        '    ', swapDetails.action, swapDetails.tokenQuantity.string, tracker.token.symbol, 
+        'for', swapDetails.comparatorQuantity.string, tracker.comparator.symbol, 
+        swapDetails.fiatQuantity.string? `($${swapDetails.fiatQuantity.string})` : '',
+        
+        '\n        ', 'Average price:', 
+        swapDetails.averageTokenPriceComparator.string, tracker.comparator.symbol,  
+        swapDetails.averageTokenPriceFiat.string? `($${swapDetails.averageTokenPriceFiat.string})` : ''
+    );
+}
+
+
 
 export default {
     binance,
     ethers,
     modules,
+    GENERIC_LOGGING_LISTENER,
     raceToResolve
 }
 
@@ -32,7 +46,6 @@ ethers
         get the nonce used and replace it using higher gas: https://info.etherscan.com/how-to-cancel-ethereum-pending-transactions/
 binance
     test withdraw -> wait -> ethers transfer
-we will need to refactor swap and addRemoveLiquidity under the uniswap v2 eventually and add uniswap v3
 technical analysis
 video tutorials
 

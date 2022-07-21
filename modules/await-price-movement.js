@@ -90,7 +90,7 @@ async function awaitPriceRiseOrFall({type, tracker, triggerPriceString, pollInte
             }
             const currentPrice = details[swapPriceKey];
             if (currentPrice.rational !== null){
-                console.log(`${s}${currentPrice.string}`);
+                //console.log(`${s}${currentPrice.string}`);
                 if (TYPE_TO_TEST[type](currentPrice.rational, triggerPrice.rational)){
                     tracker.removeListener({key});
                     resolve();

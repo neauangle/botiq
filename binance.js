@@ -86,18 +86,6 @@ async function createTracker({connectionId, tokenSymbol, comparatorSymbol, compa
         extraProperties: {
             connectionId,
             ticker,
-            buyTokensWithExact: async function({exactComparatorQuantity}){
-                return  swap({connectionId, type: 'BUY', tokenSymbol, comparatorSymbol, exactSymbol: comparatorSymbol, exactQuantity: exactComparatorQuantity});
-            },
-            sellTokensForExact: async function({exactComparatorQuantity}){
-                return  swap({connectionId, type: 'SELL', tokenSymbol, comparatorSymbol, exactSymbol: comparatorSymbol, exactQuantity: exactComparatorQuantity});
-            },
-            buyExactTokens: async function({exactTokenQuantity}){
-                return  swap({connectionId, type: 'BUY', tokenSymbol, comparatorSymbol, exactSymbol: tokenSymbol, exactQuantity: exactTokenQuantity});
-            },
-            sellExactTokens: async function({exactTokenQuantity}){
-                return  swap({connectionId, type: 'SELL', tokenSymbol, comparatorSymbol, exactSymbol: tokenSymbol, exactQuantity: exactTokenQuantity});
-            },
             getHistoryMinuteKlines: async function({startTimeMs, endTimeMs, cutVolumeAsIfEveryNthTrade}){
                 return common.getHistoryMinuteKlines({
                     startTimeMs, endTimeMs,
@@ -311,7 +299,6 @@ function createConnection({apiKey, apiSecret}){
         awaitDeposit: async ({filter, intervalSecs, timeoutSecs}) => awaitDepositOrWithdraw({type: 'Deposit', connectionId, filter, intervalSecs, timeoutSecs}),
         awaitDepositTransaction: async ({transactionHash, intervalSecs, timeoutSecs}) => awaitDepositOrWithdraw({type: 'Deposit', connectionId, filter: {txId: transactionHash}, intervalSecs, timeoutSecs}),
 
-
         buyTokensWithExact: async function({tokenSymbol, comparatorSymbol, exactComparatorQuantity}){
             return  swap({connectionId, type: 'BUY', tokenSymbol, comparatorSymbol, exactSymbol: comparatorSymbol, exactQuantity: exactComparatorQuantity});
         },
@@ -496,6 +483,12 @@ function getTestDataFromHistoricTradesFile({filepath, everyNthTrade}){
         }
     });
 }
+
+
+
+
+
+
 
 
 
