@@ -469,7 +469,7 @@ async function getQuote({tracker, tokenQuantity}){
 
 
 //returns null if the transaction should be ignored (very low volume trade or invalid log)
-async function getParsedSwapLog(tracker, log){
+async function getParsedSwapLog(tracker, log, ignoreWhenFiatValueUnder=0.01){
     const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
     //we shouldn't need this because the filter should... work... but I was getting a javascript runtime error because 
     //this also catches sync events. Not sure whether we should handle those and update prices here but
@@ -506,7 +506,7 @@ async function getParsedSwapLog(tracker, log){
     
     //we ignore transactions less than 1 cent because low-volume transactions yield outlier results in defi
     //1 cent seems fine, but if you notice it still, up it to like 10 cents or whatever.
-    if (tradeDetails.fiatQuantity.string && Number(tradeDetails.fiatQuantity.string) < 0.01){ 
+    if (tradeDetails.fiatQuantity.string && Number(tradeDetails.fiatQuantity.string) < ignoreWhenFiatValueUnder){ 
         return null;
     }
    
@@ -1146,30 +1146,31 @@ const UniswapV2 = (() =>{
         let transactionResponse;
         let methodUsed;
         if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
-            methodUsed = 'swapExactETHForTokens';
+            methodUsed = 'swapExactETHForTokensSupportingFeeOnTransferTokens';
             overrides.value = exactQuantityBigNumber;
             transactionResponse =  await functionToCall(
                 routerContract, methodUsed, inexactBoundsBigNumber, route, wallet.address, deadline, 
                 overrides
             );
         } else if (routeIndexOfExact === 0 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
-            methodUsed = 'swapExactTokensForETH';
+            methodUsed = 'swapExactTokensForETHSupportingFeeOnTransferTokens';
             transactionResponse = await functionToCall(
                 routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides   
             );
         } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfExact], trackerPrivate.endpoint.nativeToken.address)){
-            methodUsed = 'swapTokensForExactETH';
+            methodUsed = 'swapTokensForExactETHSupportingFeeOnTransferTokens';
             transactionResponse = await functionToCall(
                 routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, wallet.address, deadline, overrides
             );
         } else if (routeIndexOfExact === route.length-1 && util.isHexEqual(route[routeIndexOfInexact], trackerPrivate.endpoint.nativeToken.address)){
-            methodUsed = 'swapETHForExactTokens';
+            methodUsed = 'swapETHForExactTokensSupportingFeeOnTransferTokens';
             overrides.value = inexactBoundsBigNumber;
             transactionResponse = await functionToCall(
                 routerContract, methodUsed, exactQuantityBigNumber, route, wallet.address, deadline, overrides
             );
         } else {
-            methodUsed = routeIndexOfExact === 0 ? 'swapExactTokensForTokens' : 'swapTokensForExactTokens';
+           
+            methodUsed = routeIndexOfExact === 0 ? 'swapExactTokensForTokensSupportingFeeOnTransferTokens' : 'swapTokensForExactTokensSupportingFeeOnTransferTokens';
             transactionResponse = await functionToCall(
                 routerContract, methodUsed, exactQuantityBigNumber, inexactBoundsBigNumber, route, 
                 wallet.address, deadline, overrides
@@ -1202,8 +1203,8 @@ const UniswapV2 = (() =>{
             throw Error("No swap log found in receipt for swap transaction:" + JSON.stringify(transactionReceipt));
         }
         log('OK! TX: ' + transactionReceipt.transactionHash);
-    
-        const parsedLog = await getParsedSwapLog(tracker, swapLog);
+        
+        const parsedLog = await getParsedSwapLog(tracker, swapLog, 0);
         log(`${parsedLog.action} ${parsedLog.tokenQuantity.string} ${tracker.token.symbol} FOR ${parsedLog.comparatorQuantity.string} ${tracker.comparator.symbol} ($${parsedLog.fiatQuantity.string})`);
     
         return {
