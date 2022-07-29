@@ -1,4 +1,4 @@
-import * as util from '../util.js';
+import * as util from '../../util.js';
 import EventEmitter from 'events';
 import bigRational from "big-rational";
 

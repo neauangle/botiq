@@ -43,15 +43,18 @@ async function getQuoteInComparatorRational(tracker){
 
 
 async function createTracker({connectionId, tokenSymbol, comparatorSymbol, comparatorIsFiat}){
-    comparatorIsFiat = !!comparatorIsFiat;
     tokenSymbol = tokenSymbol.toUpperCase();
     comparatorSymbol = comparatorSymbol.toUpperCase();
     const ticker = tokenSymbol + comparatorSymbol;
+    if (comparatorIsFiat === undefined){
+        comparatorIsFiat = comparatorSymbol === 'USDT' || comparatorSymbol === 'USDC';
+    }
+    comparatorIsFiat = !!comparatorIsFiat;
 
     for (const trackerId of Object.values(connectionDatabase[connectionId].connectionPrivate.streamNameToTrackerId)){
         const tracker = tracker[trackerId].tracker;
         if (tracker.token.symbol === tokenSymbol && tracker.comparator.symbol === comparatorSymbol){
-            return tracker;
+            return tracker; //by the way this is what's stopping VSCode from giving code completion on the returned tracker object
         }
     }
     
@@ -263,8 +266,8 @@ function createConnection({apiKey, apiSecret}){
     const connection = {
         id: connectionId,
         
-        createTracker: ({tokenSymbol, comparatorSymbol, comparatorIsFiat}) => {
-            return createTracker({connectionId, tokenSymbol, comparatorSymbol, comparatorIsFiat})
+        createTracker: async ({tokenSymbol, comparatorSymbol, comparatorIsFiat}) => {
+            return createTracker({connectionId, tokenSymbol, comparatorSymbol, comparatorIsFiat});
         },
         
         getBalance: async function({tokenSymbol}){
@@ -460,7 +463,7 @@ function getTrackersBySymbols({tokenSymbol, comparatorSymbol}){
     const ret = [];
     for (const trackerId of Object.keys(trackerDatabase)){
         const tracker = trackerDatabase[trackerId].tracker;
-        if (tracker.tokenSymbol === tokenSymbol && tracker.comparatorSymbol === comparatorSymbol){
+        if (tracker.token.symbol === tokenSymbol && tracker.comparator.symbol === comparatorSymbol){
             ret.push(tracker);
         }
     }

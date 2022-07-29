@@ -82,7 +82,27 @@ export function shiftDecimals(numberString, decimals){
     }
 }
 
-/* export function getTimeString(dateObject){
-    const str = date.toISOString().slice(0, 19).replace(/-/g, "/").replace("T", " ");
-    return str;
-} */
+
+export async function raceToResolve(keytoFunction){
+    const promiseArray = [];
+    for (const key of Object.keys(keytoFunction)){
+        promiseArray.push(new Promise(async (resolve, reject) => {
+            await keytoFunction[key];
+            resolve(key);
+        }));
+    }
+    return Promise.any(promiseArray);
+}
+
+
+export const GENERIC_LOGGING_LISTENER = (swapDetails, tracker) => {
+    console.log(
+        '    ', swapDetails.action, swapDetails.tokenQuantity.string, tracker.token.symbol, 
+        'for', swapDetails.comparatorQuantity.string, tracker.comparator.symbol, 
+        swapDetails.fiatQuantity.string? `($${swapDetails.fiatQuantity.string})` : '',
+        
+        '\n        ', 'Average price:', 
+        swapDetails.averageTokenPriceComparator.string, tracker.comparator.symbol,  
+        swapDetails.averageTokenPriceFiat.string? `($${swapDetails.averageTokenPriceFiat.string})` : ''
+    );
+}

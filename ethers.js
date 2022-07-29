@@ -114,8 +114,9 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
             info = chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()]
         } else {
             const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
-            const [symbol, decimals] = await Promise.all([sendOne(tokenContract, 'symbol'), sendOne(tokenContract, 'decimals')]);
-            info = {symbol, decimals, address:tokenAddress, comparatorAddressToPairInfo: {}};
+            const fields = ['symbol', 'name', 'decimals'];
+            const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
+            info = {symbol, name, decimals, address:tokenAddress, comparatorAddressToPairInfo: {}};
             chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()] = info;
             writeOutContractAddressToInfoCache();
         }
@@ -128,16 +129,18 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         return obj[functionName](...args);
     }
 
-    async function getBalance({tokenAddress, walletAddress}){
+    async function getBalance({walletAddress, tokenAddress}){
+        if (!tokenAddress){
+            tokenAddress = nativeToken.address;
+        }
         const info = await getTokenInfoByAddress(tokenAddress);
 
-        let balanceBigNumber;
+        let balanceBigNumber = BigNumber.from(0);
         if (util.isHexEqual(info.address, nativeToken.address)){
             balanceBigNumber = await sendOne(provider, 'getBalance', walletAddress);
-        } else {
-            const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
-            balanceBigNumber = await sendOne(tokenContract, 'balanceOf', walletAddress);
         }
+        const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
+        balanceBigNumber = balanceBigNumber.add(await sendOne(tokenContract, 'balanceOf', walletAddress));
 
         const rational = bigRational(balanceBigNumber).divide(bigRational('10').pow(info.decimals));
         const string = util.formatRational(rational, info.decimals);
@@ -293,12 +296,12 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     let token, comparator, pair;
     for (const cachedInfo of Object.values(contractAddressToInfoCache)){
         if (util.isHexEqual(tokenAddress, cachedInfo.address)){
-            token = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, address: cachedInfo.address};
+            token = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
             if (cachedInfo.comparatorAddressToPairInfo[comparatorAddress]){
                 pair = {...cachedInfo.comparatorAddressToPairInfo[comparatorAddress]};
             }
         } else if (util.isHexEqual(comparatorAddress, cachedInfo.address)){
-            comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, address: cachedInfo.address};
+            comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
         } 
     }
 
@@ -306,17 +309,18 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     const comparatorContract = new ethers.Contract(comparatorAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
     let pairContract;
     const sendOne = endpoint.sendOne;
+    const fields = ['symbol', 'name', 'decimals']; 
     await Promise.all([
         (async () => {
-            if (!token){
-                const [symbol, decimals] = await Promise.all([sendOne(tokenContract, 'symbol'), sendOne(tokenContract, 'decimals')]);
-                token = {symbol, decimals, address: tokenAddress};
+            if (!token){ 
+                const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
+                token = {symbol, name, decimals, address: tokenAddress};
             }
         })(),
         (async () => {
             if (!comparator){
-                const [symbol, decimals] = await Promise.all([sendOne(comparatorContract, 'symbol'), sendOne(comparatorContract, 'decimals')]);
-                comparator = {symbol, decimals, address: comparatorAddress};
+                const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
+                comparator = {symbol, name, decimals, address: comparatorAddress};
             }
         })(),
         (async () => {
@@ -456,8 +460,8 @@ async function getQuote({tracker, tokenQuantity}){
     return {
         reserveTokenRational,
         reserveComparatorRational,
-        tokenPerComparatorRational: reserveTokenRational.divide(reserveComparatorRational),
-        comparatorPerTokenRational: reserveComparatorRational.divide(reserveTokenRational),
+        tokenPerComparatorRational: reserveComparatorRational.isZero() ? bigRational.zero : reserveTokenRational.divide(reserveComparatorRational),
+        comparatorPerTokenRational: reserveComparatorRational.isZero() ? bigRational.zero : reserveComparatorRational.divide(reserveTokenRational),
         //Math is the same as what the "quote" function in routers do
         quoteRational: (reserveComparatorRational.multiply(tokenQuantity)).divide(reserveTokenRational.add(tokenQuantity))
 
@@ -688,7 +692,7 @@ async function checkAllowance({endpoint, wallet, addressToAllow, tokenAddress, r
         const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, wallet);
         const approvedAmountBigNumber = await endpoint.sendOne(tokenContract, 'allowance', wallet.address, addressToAllow);
         if (approvedAmountBigNumber.lt(requiredAmount)){
-            console.log(tokenAddress, wallet.address, addressToAllow, approvedAmountBigNumber.toString(), requiredAmount.toString());
+            //console.log(tokenAddress, wallet.address, addressToAllow, approvedAmountBigNumber.toString(), requiredAmount.toString());
             log(`Approving ${tokenAddress} for router ${addressToAllow}`);
             const tx = await endpoint.sendOne(tokenContract, 'approve', addressToAllow, ethers.constants.MaxUint256);
             await waitForTransaction(endpoint, tx);
@@ -996,7 +1000,9 @@ function createWalletFromPrivateKey({privateKey}){
     return new ethers.Wallet(privateKey);
 }
 
-
+function createRandomWallet(options){
+    return ethers.Wallet.createRandom(options);
+}
 
 
 
@@ -1068,16 +1074,24 @@ const UniswapV2 = (() =>{
         //exact amount
         let walletBalanceOfExact;
         let exactQuantityRational;
+        if (quantityString.endsWith('%') && quantityString.startsWith('-')){
+            throw Error("Quantity string cannot both be prepended with '-' and appended with '%'");
+        }
         if (quantityString.endsWith('%')){
             quantityString = util.trim(quantityString, '%');
             walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
             exactQuantityRational = bigRational(quantityString).divide(100).multiply(walletBalanceOfExact.rational);
             log(`${infoOfExact.symbol} quantity: ${quantityString}% of ${walletBalanceOfExact.string} = ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
+        } else if (quantityString.startsWith('-')){
+            quantityString = util.trim(quantityString, '-');
+            walletBalanceOfExact = await trackerPrivate.endpoint.getBalance({tokenAddress: infoOfExact.address, walletAddress: wallet.address});
+            exactQuantityRational = walletBalanceOfExact.rational.minus(quantityString);
+            log(`${infoOfExact.symbol} quantity: ${walletBalanceOfExact.string} balance - ${quantityString} = ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
         } else {
             exactQuantityRational = bigRational(quantityString);
             log(`${infoOfExact.symbol} quantity: ${util.formatRational(exactQuantityRational, infoOfExact.decimals)}`);
         }
-    
+
         const exactQuantityBigNumber = BigNumber.from(exactQuantityRational.multiply(bigRational('10').pow(infoOfExact.decimals)).toDecimal(0));
         const exactString = util.formatRational(exactQuantityRational, infoOfExact.decimals);
         if (method === 'buyTokensWithExact' || method === 'sellExactTokens'){
@@ -1473,4 +1487,4 @@ const UniswapV2 = (() =>{
 
 
 
-export default {...ethersBase, createWalletFromPrivateKey, createJsonRpcEndpoint, UniswapV2};
+export default {...ethersBase, createWalletFromPrivateKey, createRandomWallet, createJsonRpcEndpoint, UniswapV2};

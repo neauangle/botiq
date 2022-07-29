@@ -13,7 +13,7 @@ NOTE: You don't actually need an API_KEY or API_SECRET for this demo.
 
 
 const connection = botiq.binance.createConnection({ apiKey: 'PASTE_API_KEY_HERE',  apiSecret: 'PASTE_API_SECRET_HERE'});
-const ethTracker = await  connection.createTracker({tokenSymbol: 'ETH', comparatorSymbol: 'USDT', comparatorIsFiat: true});
+const ethTracker = await  connection.createTracker({tokenSymbol: 'ETH', comparatorSymbol: 'USDT'});
 
 const testData = botiq.binance.getTestDataFromHistoricTradesFile(
     {filepath: './testdata/ETHUSDT-trades-2022-05-19.csv', everyNthTrade: 100
@@ -38,28 +38,3 @@ const listenerKey = ethTracker.addSwapListener({listener: (swapDetails, tracker)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* 
-//testing bar manager. note: bar manager is experimental
-const barManager = botiq.modules.barManager.createBarManager({tracker: ethTracker, durationKeys: ['1m', '1h']});
-barManager.addNewBarListener({durationKey: '1m', listener: ({bar}) => {
-    console.log(`1m bar closed at ${bar.close}`);
-}});
-barManager.addNewBarListener({durationKey: '1h', listener: ({bar}) => {
-    console.log(`1h bar closed at ${bar.close}`);
-}});
-
-
- */

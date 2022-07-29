@@ -39,7 +39,7 @@ export function cancelTimeout({key}){
     delete keyToAwait[key];
 }
 
-export function setPreciseTimeout({callback, lengthMs, callCallbackOnCancel}){
+export function setPreciseTimeout({callback, lengthMs, callbackOnCancel}){
     const key = util.getUniqueId();
     keyToAwait[key] = true;
 
@@ -50,7 +50,7 @@ export function setPreciseTimeout({callback, lengthMs, callCallbackOnCancel}){
 
     const internalCallback = () => {
         if (!keyToAwait[key]){
-            if (callCallbackOnCancel){
+            if (callbackOnCancel){
                 callback();
             }
             return;

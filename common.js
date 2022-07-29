@@ -3,7 +3,7 @@ import bigRational from "big-rational";
 import * as util from './util.js';
 import {log} from "./logger.js";
 
-const FIAT_DEFAULT_DECIMALS = 8;
+const FIAT_DEFAULT_DECIMALS = 12;
 
 const TRACKER_DATA_EVENTS = {
     PRICE_UPDATE: "PRICE_UPDATE",
@@ -47,8 +47,8 @@ function _getTrackerLinkToFiat(tracker, link){
 async function getFiatQuantityRational({tracker, priceRational, priceIsInToken}){
     let fiatQuantityRational = null;
     const trackerLinkToFiat = getTrackerLinkToFiat(tracker);
-    if (priceIsInToken && tracker.mostRecentPrices.comparatorRational === null){
-        throw Error("Cannot derive fiat from price in token if tracker does not yet have comparatorRational.");
+    if (priceIsInToken && tracker.mostRecentPrices.comparator.rational === null){
+        throw Error("Cannot derive fiat from price in token if tracker does not yet have comparator.rational.");
     }
     if (trackerLinkToFiat){
         fiatQuantityRational = priceRational;
@@ -66,8 +66,8 @@ async function getFiatQuantityRational({tracker, priceRational, priceIsInToken})
 function getFiatQuantityRationalSync({tracker, priceRational, priceIsInToken}){
     let fiatQuantityRational = null;
     const trackerLinkToFiat = getTrackerLinkToFiat(tracker);
-    if (priceIsInToken && tracker.mostRecentPrices.comparatorRational === null){
-        throw Error("Cannot derive fiat from price in token if tracker does not yet have comparatorRational.");
+    if (priceIsInToken && tracker.mostRecentPrices.comparator.rational === null){
+        throw Error("Cannot derive fiat from price in token if tracker does not yet have comparator.rational.");
     }
     if (trackerLinkToFiat){
         fiatQuantityRational = priceRational;
@@ -182,6 +182,8 @@ async function createTrackerObject({
             },
             timestamp: 0
         },
+        
+        getNewPrice: async () => updatePrice(tracker),
 
         addSwapListener: ({listener}) => {
             const key = util.getUniqueId();
@@ -223,6 +225,7 @@ async function createTrackerObject({
                     ... await deriveTradeDetails({
                         tokenQuantityString: '1', 
                         comparatorQuantityString: mostRecentPrices.comparator.string, 
+                        comparatorDecimals: comparator.decimals,
                         possibleTrackers: [tracker],
                         timestamp: mostRecentPrices.timestamp
                     })
@@ -451,6 +454,7 @@ async function processTrade({tracker, action, timestamp, tokenQuantityRational, 
     const tradeDetails = await deriveTradeDetails({
         tokenQuantityString,
         comparatorQuantityString,
+        comparatorDecimals: tracker.comparator.decimals,
         possibleTrackers: [tracker]
     });
   
