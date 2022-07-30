@@ -1,6 +1,6 @@
 {
   "name": "botiq",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "High-level library for creating cryptocurrency bots.",
   "repository": {
     "type": "git",
