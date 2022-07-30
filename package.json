@@ -1,8 +1,18 @@
 {
   "name": "botiq",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "High-level library for creating cryptocurrency bots.",
-  "keywords": [ "crypto", "bot", "defi", "dapp", "web3.0", "binance", "ethereum", "fantom", "avalanche"],
+  "keywords": [
+    "crypto",
+    "bot",
+    "defi",
+    "dapp",
+    "web3.0",
+    "binance",
+    "ethereum",
+    "fantom",
+    "avalanche"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/neauangle/botiq.git"
