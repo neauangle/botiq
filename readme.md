@@ -1,6 +1,6 @@
 **BOTIQ**
 
-High-level node.js library useful for creating cryptocurrency bots and apps for the Binance CEX and Ethereum-compatible blockchains. Features automatic fiat conversions available.
+High-level node.js library useful for creating cryptocurrency bots and apps for the Binance CEX and Ethereum-compatible blockchains. Features automatic fiat conversions where available.
 
 
 **Binance Limit Buy Example**
@@ -71,3 +71,8 @@ See ./examples/ for more.
 
 ethers.js and binance.js handle the specifics of their tokens, while common.js is the place to look for the actual tracker API. It should be quite easy to add CEXs if you make judicious use of common.massageCexMarketSwapData.
 
+**Supporting the Project**
+
+I am neither financially comfortable nor hungry. Donations support [my work](https://github.com/neauangle/) and are always greatly appreciated! 
+
+🙏 0xeF6102cf13Bf075BD5A61BBa1ec7E509899f7152 🙏
