@@ -57,7 +57,7 @@ function writeOutContractAddressToInfoCache(){
 
 
 
-async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplorerURL, fiatTokenAddress, nativeTokenAddress, defaultExchange}){
+async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplorerURL, fiatTokenAddress, nativeTokenAddress, defaultExchange, omitNativeTokenTrackerInit}){
     console.log('Adding endpoint...');
 
     const limiter =  new RateLimiter({ tokensPerInterval: rateLimitPerSecond, interval: "second" });
@@ -160,6 +160,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         return gasLimit;
     }
 
+
     async function sendTransaction(contract, ...args){
         if (args[args.length - 1].gasPrice || args[args.length - 1].maxPriorityFeePerGas){
             //We need to sert the gas LIMIT if we've set the gas PRICE
@@ -247,11 +248,14 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         nativeToFiatTracker: null,
     }
 
-    endpoint.nativeToFiatTracker = await endpoint.createTracker({
-        tokenAddress: nativeToken.address,
-        comparatorAddress: fiatToken.address,
-        comparatorIsFiat: true,
-    });
+    if (!omitNativeTokenTrackerInit){
+        endpoint.nativeToFiatTracker = await endpoint.createTracker({
+            tokenAddress: nativeToken.address,
+            comparatorAddress: fiatToken.address,
+            comparatorIsFiat: true,
+        });
+    }
+    
 
     console.log('Endpoint added.');
 
@@ -829,11 +833,16 @@ async function generalContractCall({endpoint, contractAddress, abiFragment, func
     if (valueField !== null && valueField !== undefined){
         overrides.value = BigNumber.from(valueField);
     }
-
-    let response = await endpoint.sendTransaction(contract, functionName, ...functionArgValues, overrides);
-    log('Sending transaction...');
-    response = await response;
-    if (typeof response === 'object' && response.wait && response.nonce){
+    let response;
+    if (ethers.Signer.isSigner(provider)){
+        log(`Sending transaction calling ${functionName}...`);
+        response = await endpoint.sendTransaction(contract, functionName, ...functionArgValues, overrides);
+    } else {
+        log(`Calling read-only function ${functionName}...`);
+        response = await contract[functionName](...functionArgValues, overrides);
+    }
+   
+    if (typeof response === 'object' && response.wait && response.nonce && response.hash){
         log('TX: ' + response.hash);
         log('Awaiting confirmation...');
         const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);

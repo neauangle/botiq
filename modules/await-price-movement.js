@@ -173,7 +173,7 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
 
             if (hasHitInitialTrigger){
                 if (!mostExtremePriceAfterInitialTrigger || TYPE_TO_TEST[types[0]](currentPrice.rational, mostExtremePriceAfterInitialTrigger.rational)){
-                    log(`Price ${types[0]} to new bounds: ${s}${util.formatRational(currentPrice.rational, priceDecimals)}`);
+                    //log(`Price ${types[0]} to new bounds: ${s}${util.formatRational(currentPrice.rational, priceDecimals)}`);
                     mostExtremePriceAfterInitialTrigger = currentPrice;
                     //add to lowerbounds to get the trigger price to hit on our way up, and vice versa
                     //RISE is lowerbounds because we're on our way back up from extreme lowerbounds to that lowerbounds + offset
@@ -186,14 +186,14 @@ async function awaitRiseThenFallOrFallThenRise({types, tracker, firstTriggerStri
                             delta = mostExtremePriceAfterInitialTrigger.rational.minus(priceOnActivation.rational).abs();
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.minus(delta.multiply(thenFractionRational));
                         }
-                        log(`Then trigger: ${types[1]} ${thenTriggerString}% of delta ${s}${util.formatRational(delta, priceDecimals)} to ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
+                        //log(`Then trigger: ${types[1]} ${thenTriggerString}% of delta ${s}${util.formatRational(delta, priceDecimals)} to ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
                     } else {
                         if (types[1] === 'RISE'){
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.add(mostExtremePriceAfterInitialTrigger.rational.multiply(thenFractionRational));
                         } else {
                             thenTriggerPriceRational = mostExtremePriceAfterInitialTrigger.rational.minus(mostExtremePriceAfterInitialTrigger.rational.multiply(thenFractionRational));
                         }
-                        log(`Then trigger: ${types[1]} to ${thenTriggerString}% of ${s}${mostExtremePriceAfterInitialTrigger.string} = ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
+                        //log(`Then trigger: ${types[1]} to ${thenTriggerString}% of ${s}${mostExtremePriceAfterInitialTrigger.string} = ${s}${util.formatRational(thenTriggerPriceRational, priceDecimals)}`);
                     }
                 }
     
