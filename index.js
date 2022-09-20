@@ -18,7 +18,6 @@ export default {
     TODO
     -----
 ethers
-    figure out how to parse liquidity logs and add that info to add/remove functions
     test liquidity
     add cancelTransaction
         get the nonce used and replace it using higher gas: https://info.etherscan.com/how-to-cancel-ethereum-pending-transactions/

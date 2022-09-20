@@ -71,9 +71,9 @@ const ethereumEndpoint = await botiq.ethers.createJsonRpcEndpoint({
 });
 
 const tokenTracker = await ethereumEndpoint.createTracker({
-    exchange: botiq.ethers.ethereum.exchanges.uniswapV2,
+    exchange: botiq.ethers.chains.ethereum.exchanges.uniswapV2,
     tokenAddress: 'PASTE_TOKEN_ADDRESS_HERE',
-    comparatorAddress: botiq.ethers.ethereum.tokenAddresses.ETH,
+    comparatorAddress: botiq.ethers.chains.ethereum.tokenAddresses.ETH,
 });
 
 await botiq.modules.awaitPriceMovement.awaitPriceFall({
