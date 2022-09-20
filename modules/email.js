@@ -1,11 +1,11 @@
 import * as nodemailer from "nodemailer";
 
 
-
+//"less secure apps" no longer supported by google
 //Note: to use gmail you have to enable less secure app access here: https://www.google.com/settings/security/lesssecureapps
-export async function sendTextGmail({username, password, to, subject, text}){
+/* export async function sendTextGmail({username, password, to, subject, text}){
     return sendEmail({host: 'smtp.gmail.com', username, password, to, subject, text});
-}
+} */
 
 
 

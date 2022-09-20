@@ -12,6 +12,7 @@ import ethersBase from './ethers-base.js';
 
 const VALID_ERC20_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const SWAP_FILTER_HASHED = ethers.utils.id("Swap(address,uint256,uint256,uint256,uint256,address)");
+const TRANSFER_FILTER_HASHED = ethers.utils.id("Transfer(address,address,uint256)");
 
 const CHAIN_CONTRACT_ADDRESS_TO_INFO_CACHE_FILENAME = "./cache/chain-contract-address-to-info-cache.json";
 
@@ -308,7 +309,7 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
             comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
         } 
     }
-
+    
     const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
     const comparatorContract = new ethers.Contract(comparatorAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
     let pairContract;
@@ -482,7 +483,7 @@ async function getParsedSwapLog(tracker, log, ignoreWhenFiatValueUnder=0.01){
     //we shouldn't need this because the filter should... work... but I was getting a javascript runtime error because 
     //this also catches sync events. Not sure whether we should handle those and update prices here but
     // interface.parseLog fails as is so for now, let's just forget about them
-    if (!log || !log.topics || !log.topics.includes(trackerPrivate.swapEventFilter.topics[0])){
+    if (!log || !log.topics || !log.topics.includes(SWAP_FILTER_HASHED)){
         return null;
     }
     const parsedLog = trackerPrivate.pairContract.interface.parseLog(log);
@@ -526,10 +527,6 @@ async function getParsedSwapLog(tracker, log, ignoreWhenFiatValueUnder=0.01){
         ...tradeDetails
     };
 }
-
-
-
-
 
 
 
@@ -823,6 +820,9 @@ async function generalContractCall({endpoint, contractAddress, abiFragment, func
     for (let i = 0; i < functionArgs.length; ++ i){
         let arg = functionArgs[i];
         if (arg !== '' && !isNaN(arg) && !VALID_ERC20_REGEX.test(arg)){
+            if (typeof arg !== 'string'){
+                arg = arg.toString();
+            }
             arg = BigNumber.from(arg.split(".")[0]);
         }
         functionArgValues.push(arg);
@@ -1217,7 +1217,7 @@ const UniswapV2 = (() =>{
         const transactionReceipt = await waitForTransaction(trackerPrivate.endpoint, transactionResponse);
         let swapLog;
         for (const log of transactionReceipt.logs){
-            if (util.isHexEqual(log.topics[0], trackerPrivate.swapEventFilter.topics[0]) && util.isHexEqual(log.address, trackerPrivate.swapEventFilter.address[0])){
+            if (util.isHexEqual(log.topics[0], SWAP_FILTER_HASHED) && util.isHexEqual(log.address, trackerPrivate.swapEventFilter.address[0])){
                 swapLog = log;
                 break;
             }
@@ -1243,6 +1243,7 @@ const UniswapV2 = (() =>{
     //untested!
     //method === addLiquidity -> pairQuantity not needed
     //method === removeLiquidity -> tokenQuantity and minNativeReserved not needed
+    //addLiquidity: Reduces quantities to match comparator balance constraints before slippage is calculated
     async function addOrRemoveliquidityUniswapV2({tracker, privateKey, method, tokenQuantity, pairQuantity, minNativeReserved,
     slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
         const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
@@ -1450,12 +1451,85 @@ const UniswapV2 = (() =>{
     
         log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`)
         const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);
+        const quantities = getLiquidityActionQuantitiesFromTransactionLogs({
+            tracker,
+            userWalletAddress: wallet.address,
+            logs: transactionReceipt.logs
+        });
         log('OK! TX: ' + transactionReceipt.transactionHash);
     
         return {
             transactionHash: transactionReceipt.transactionHash,
+            ...quantities,
             ...(await getGasFeeSpent(endpoint, transactionResponse, transactionReceipt))
         }
+    }
+
+
+    function getLiquidityActionQuantitiesFromTransactionLogs({tracker, userWalletAddress, logs}){
+        const quantityMap = {
+            tokenQuantitySent: {
+                address: tracker.token.address,
+                from: userWalletAddress,
+                to: tracker.pair.address,
+                amountDecimals: tracker.token.decimals
+            },
+            tokenQuantityReceived: {
+                address: tracker.token.address,
+                from: tracker.pair.address,
+                to: userWalletAddress,
+                amountDecimals: tracker.token.decimals
+            },
+            
+            comparatorQuantitySent: {
+                address: tracker.comparator.address,
+                from: userWalletAddress,
+                to: tracker.pair.address,
+                amountDecimals: tracker.comparator.decimals
+            },
+            comparatorQuantityReceived: {
+                address: tracker.comparator.address,
+                from: tracker.pair.address,
+                to: userWalletAddress,
+                amountDecimals: tracker.comparator.decimals
+            },
+    
+            pairQuantitySent: {
+                address: tracker.pair.address,
+                from: userWalletAddress,
+                to: tracker.pair.address,
+                amountDecimals: tracker.pair.decimals
+            },
+            pairQuantityReceived: {
+                address: tracker.pair.address,
+                from: '0x00',
+                to: userWalletAddress,
+                amountDecimals: tracker.pair.decimals
+            },
+        }
+    
+        const ret = {};
+        for (const quantityKey of Object.keys(quantityMap)){
+            ret[quantityKey] = {string: '0', rational: bigRational.zero};
+        }
+    
+        for (const log of logs){
+            if (util.isHexEqual(log.topics[0], TRANSFER_FILTER_HASHED)){
+                const [from, to, amountBigNumber] = [log.topics[1], log.topics[2], BigNumber.from(log.data)];
+                console.log(from, to, amountBigNumber);
+                for (const quantityKey of Object.keys(quantityMap)){
+                    const quantityEntryInfo = quantityMap[quantityKey];
+                    
+                    if (util.isHexEqual(log.address, quantityEntryInfo.address)
+                    && util.isHexEqual(from, quantityEntryInfo.from)
+                    && util.isHexEqual(to, quantityEntryInfo.to)){
+                        ret[quantityKey].rational = bigRational(amountBigNumber.toString()).divide(bigRational('10').pow(quantityEntryInfo.amountDecimals));
+                        ret[quantityKey].string = util.formatRational(ret[quantityKey].rational, quantityEntryInfo.amountDecimals);
+                    }
+                }
+            }
+        }
+        return ret;
     }
 
 
@@ -1475,13 +1549,17 @@ const UniswapV2 = (() =>{
             return swapUniswapV2({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
         },
         addLiquidity: ({privateKey, tracker, tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
-            return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'addLiquidity', tokenQuantity, pairQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+            return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'addLiquidity', tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
         },
         removeLiquidity: ({privateKey, tracker, pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
             return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'removeLiquidity', pairQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        },
+        getLiquidityActionQuantitiesFromTransactionLogs: ({tracker, userWalletAddress, logs}) => {
+            return getLiquidityActionQuantitiesFromTransactionLogs({tracker, userWalletAddress, logs});
         }
     }
 })();
+
 
 
 

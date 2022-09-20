@@ -1,6 +1,7 @@
 import fs from 'fs';
 import bigRational from "big-rational";
-
+import { BigNumber } from 'ethers';
+import { utils } from 'ethers';
 
 let idCounter = 0;
 
@@ -42,7 +43,8 @@ export async function awaitMs(ms) {
 }
 
 export function isHexEqual(hexA, hexB){
-    return hexA.toUpperCase() === hexB.toUpperCase();
+    //console.log(utils.hexValue(hexA), utils.hexValue(hexB), utils.hexValue(hexA) === utils.hexValue(hexB))
+    return utils.hexValue(hexA) === utils.hexValue(hexB);
 }
 
 
@@ -105,4 +107,12 @@ export const GENERIC_LOGGING_LISTENER = (swapDetails, tracker) => {
         swapDetails.averageTokenPriceComparator.string, tracker.comparator.symbol,  
         swapDetails.averageTokenPriceFiat.string? `($${swapDetails.averageTokenPriceFiat.string})` : ''
     );
+}
+
+export function makeBigNumber(arg){
+    return BigNumber.from(arg);
+}
+
+export function makeRational(number, decimals){
+    return bigRational(number.toString()).divide(bigRational('10').pow(decimals))
 }
