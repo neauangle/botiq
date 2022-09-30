@@ -1556,6 +1556,17 @@ const UniswapV2 = (() =>{
         sellExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
             return swapUniswapV2({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
         },
+        
+        swap: async function({privateKey, tracker, action, amount, specifying, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
+            const method = action.toLowerCase();
+            if (specifying.toUpperCase().endsWith('EXACTTOKENS')){
+                method += 'ExactTokens';
+            } else {
+                method += action === 'buy' ? 'TokensWithExact' : 'TokensForExact'
+            }
+            return swapUniswapV2({tracker, privateKey, method, exactQuantity: amount, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+
+        },
         addLiquidity: ({privateKey, tracker, tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
             return addOrRemoveliquidityUniswapV2({tracker, privateKey, method: 'addLiquidity', tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
         },

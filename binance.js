@@ -314,6 +314,13 @@ function createConnection({apiKey, apiSecret}){
         sellExactTokens: async function({tokenSymbol, comparatorSymbol, exactTokenQuantity}){
             return  swap({connectionId, type: 'SELL', tokenSymbol, comparatorSymbol, exactSymbol: tokenSymbol, exactQuantity: exactTokenQuantity});
         },
+        swap: async function({tokenSymbol, comparatorSymbol, action, amount, specifying}){
+            return  swap({
+                connectionId, type: action.toUpperCase(), tokenSymbol, comparatorSymbol, 
+                exactSymbol: specifying.toUpperCase().endsWith('EXACTCOMPARATOR') ? comparatorSymbol : tokenSymbol, 
+                exactQuantity: amount
+            });
+        }
     };
 
     const connectionPrivate = {
