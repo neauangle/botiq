@@ -17,6 +17,8 @@ export default {
 /*
     TODO
     -----
+add -ve amount support for binance
+add percentage -ve support for ethers and binance (leave a percentage of current balance)
 ethers
     test liquidity
     add cancelTransaction

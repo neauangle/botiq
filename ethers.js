@@ -235,6 +235,11 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
             if (!comparatorAddress){
                 comparatorAddress = nativeTokenAddress;
             }
+            if (comparatorIsFiat === undefined){
+                if (ethersBase.chains[chainName].fiatAddresses.some(address => util.isHexEqual(comparatorAddress, address))){
+                    comparatorIsFiat = true;
+                }
+            }
             return createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds});
         },
         addContractEventListener: function({contractAddress, abiFragment, listener}){

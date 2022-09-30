@@ -23,6 +23,9 @@ const ethers = {
                 USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
                 WETH: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
             },
+            fiatAddresses: [
+                '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', //USDC
+            ],
             exchanges: {
                 //order is important: 0 -> default
                 uniswapV2: {
@@ -41,6 +44,9 @@ const ethers = {
                 USDC: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75',
                 WFTM: '0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83',
             },
+            fiatAddresses: [
+                '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75', //USDC
+            ],
             exchanges: {
                 spookySwap: {
                     factoryAddress: '0x152eE697f2E276fA89E96742e9bB9aB1F2E61bE3',
@@ -57,8 +63,13 @@ const ethers = {
             tokenAddresses: {
                 WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
                 BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
+                USDC: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d',
                 BNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
             },
+            fiatAddresses: [
+                '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', //BUSD
+                '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', //USDC
+            ],
             exchanges: {
                 pancakeSwapV2: {
                     factoryAddress: '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73',
