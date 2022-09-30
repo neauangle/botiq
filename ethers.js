@@ -73,10 +73,12 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
             eventFilterToRegisteredEvents: {},
         }
     }
-
+    
+    let chainName;
     if (!nativeTokenAddress || !fiatTokenAddress || !defaultExchange){
         for (const chain of Object.values(ethersBase.chains)){
             if (chain.chainIds.includes(chainId)){
+                chainName = chain.TAG;
                 if (!nativeTokenAddress){
                     nativeTokenAddress = Object.values(chain.tokenAddresses)[0];
                 } 
@@ -209,6 +211,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
     const endpoint = {
         provider,
         chainId,
+        chainName,
         nativeToken,
         blockExplorerURL,
         sendCustomData,
