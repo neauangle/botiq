@@ -1558,7 +1558,7 @@ const UniswapV2 = (() =>{
         },
         
         swap: async function({privateKey, tracker, action, amount, specifying, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
-            const method = action.toLowerCase();
+            let method = action.toLowerCase();
             if (specifying.toUpperCase().endsWith('EXACTTOKENS')){
                 method += 'ExactTokens';
             } else {
