@@ -223,7 +223,8 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         sendTransaction,
         getBalance,
         transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}){
-            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei})
+            tokenAddress = resolveTokenAddressFromNickname(endpoint, tokenAddress);
+            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei});
         },
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
             return generalContractCall({endpoint, contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei});
@@ -235,11 +236,16 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
             if (!comparatorAddress){
                 comparatorAddress = nativeTokenAddress;
             }
+
+            tokenAddress = resolveTokenAddressFromNickname(endpoint, tokenAddress);
+            comparatorAddress = resolveTokenAddressFromNickname(endpoint, comparatorAddress);
+            
             if (comparatorIsFiat === undefined){
                 if (ethersBase.chains[chainName].fiatAddresses.some(address => util.isHexEqual(comparatorAddress, address))){
                     comparatorIsFiat = true;
                 }
             }
+
             return createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds});
         },
         addContractEventListener: function({contractAddress, abiFragment, listener}){
@@ -295,6 +301,18 @@ async function getQuoteInComparatorRational(tracker){
 
 
 
+function resolveTokenAddressFromNickname(endpoint, nickname){
+    if (nickname === 'nativeToken'){
+        return endpoint.nativeToken.address;
+    } else {
+        for (const symbol of Object.keys(ethersBase.chains[endpoint.chainName].tokenAddresses)){
+            if (nickname === symbol){
+                return ethersBase.chains[endpoint.chainName].tokenAddresses[symbol];
+            }
+        }
+    }
+    return nickname;
+}
 
 
 async function createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds}){
