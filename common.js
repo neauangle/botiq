@@ -134,7 +134,7 @@ async function updatePrice(tracker, priceInComparatorRational, timestamp){
 }
 
 async function createTrackerObject({
-    backendName, token, comparator, pair, refreshSwapStream, getQuoteInComparatorRational, getUplinkTrackers, 
+    backendName, token, comparator, pair, isEqualTo, refreshSwapStream, getQuoteInComparatorRational, getUplinkTrackers, 
     processBeforeFirstPriceUpdate, extraProperties
 }){
     const trackerId = util.getUniqueId();
@@ -147,7 +147,7 @@ async function createTrackerObject({
         testStreamKeyToInfo: {},
         eventEmitter: new EventEmitter(),
         priceIsUpdating: false,
-        getQuoteInComparatorRational, refreshSwapStream, getUplinkTrackers,
+        getQuoteInComparatorRational, refreshSwapStream, getUplinkTrackers
         
     };
     trackerDatabase[trackerId] = trackerData;
@@ -182,7 +182,7 @@ async function createTrackerObject({
             },
             timestamp: 0
         },
-        
+        isEqualTo,
         getNewPrice: async () => updatePrice(tracker),
 
         addSwapListener: ({listener}) => {

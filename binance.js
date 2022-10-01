@@ -75,6 +75,9 @@ async function createTracker({connectionId, tokenSymbol, comparatorSymbol, compa
             decimals: pairExchangeParameters.quoteAssetPrecision
         },
         pair: {comparatorIsFiat},
+        isEqualTo: ({token, comparator}) => {
+            return token.toUpperCase() === tokenSymbol.toUpperCase() && comparator.toUpperCase() === comparatorSymbol.toUpperCase();
+        },
         refreshSwapStream: () => connectionDatabase[connectionId].connectionPrivate.refreshSwapStream(), 
         getQuoteInComparatorRational,
         getUplinkTrackers,

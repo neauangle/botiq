@@ -437,6 +437,11 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     const tracker = await common.createTrackerObject({
         backendName: 'ethers',
         token, comparator, pair,
+        isEqualTo: ({token, comparator}) => {
+            token = resolveTokenAddressFromNickname(trackerPrivate.endpoint, token);
+            comparator = resolveTokenAddressFromNickname(trackerPrivate.endpoint, comparator);
+            return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress);
+        },
         refreshSwapStream: (tracker, turnOn) => {
             if (turnOn){
                 trackerPrivate.endpoint.provider.addListener(trackerPrivate.swapEventFilter, trackerPrivate.swapHandler);
