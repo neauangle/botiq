@@ -17,6 +17,9 @@ const ethers = {
         ethereum: {
             TAG: 'ethereum',
             chainIds: [1],
+            transactionUrl: 'https://etherscan.io/tx/<transactionHash>',
+            addressUrl: 'https://etherscan.io/address/<address>',
+            chartUrl: 'https://www.dextools.io/app/ether/pair-explorer/<pairAddress>',
             tokenAddresses: {
                 //order is important: 0 -> native, 1 -> default fiat
                 ETH: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
@@ -39,6 +42,9 @@ const ethers = {
         fantom: {
             TAG: 'fantom',
             chainIds: [250],
+            transactionUrl: 'https://ftmscan.com/tx/<transactionHash>',
+            addressUrl: 'https://ftmscan.com/address/<address>',
+            chartUrl: 'https://www.dextools.io/app/fantom/pair-explorer/<pairAddress>',
             tokenAddresses: {
                 FTM: '0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83',
                 USDC: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75',
@@ -60,6 +66,9 @@ const ethers = {
         binanceSmartChain: {
             TAG: 'binanceSmartChain',
             chainIds: [56],
+            transactionUrl: 'https://bscscan.com/tx/<transactionHash>',
+            addressUrl: 'https://bscscan.com/address/<address>',
+            chartUrl: 'https://www.dextools.io/app/bnb/pair-explorer/<pairAddress>',
             tokenAddresses: {
                 WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
                 BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
@@ -82,6 +91,9 @@ const ethers = {
         avaxC: {
             TAG: 'avaxC',
             chainIds: [43114],
+            transactionUrl: 'https://snowtrace.io/tx/<transactionHash>',
+            addressUrl: 'https://snowtrace.io/address/<address>',
+            chartUrl: 'https://www.dextools.io/app/avalanche/pair-explorer/<pairAddress>',
             tokenAddresses: {
                 AXAX: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
                 USDTe: '0xc7198437980c041c805a1edcba50c1ce5db95118',

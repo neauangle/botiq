@@ -149,3 +149,18 @@ export function toCapitalCase(string){
     }
     return ret.trim();
 }
+
+export function locale(n){
+    return n.toLocaleString(undefined, {maximumFractionDigits: 10});
+}
+
+//https://gist.github.com/djD-REK/068cba3d430cf7abfddfd32a5d7903c3
+//doe snot work if number is already in exponential notation.
+export function roundAccurately(number, decimalPlaces, padAsString){
+    const ret =  Number(Math.round(number + "e" + decimalPlaces) + "e-" + decimalPlaces);
+    if (padAsString){
+        return padAfterDecimalPlaces(ret, decimalPlaces);
+    } else {
+        return ret;
+    }
+}
