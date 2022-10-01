@@ -880,6 +880,13 @@ async function generalContractCall({endpoint, contractAddress, abiFragment, func
     } else {
         if (BigNumber.isBigNumber(response)){
             response = response.toString();
+        } else if (Array.isArray(response)){
+            response = [...response];//necessary for some reason, otherwise get TypeError: Cannot assign to read only property '0' of object '[object Array]'
+            for (let i = 0; i < response.length; ++i){
+                if (BigNumber.isBigNumber(response[i])){
+                    response[i] = response[i].toString();
+                }
+            }
         }
         return response;
     }   
