@@ -302,12 +302,11 @@ async function getQuoteInComparatorRational(tracker){
 
 
 function resolveTokenAddressFromNickname(endpoint, nickname){
-    const nicknameUpperCase = nickname.toUpperCase()
-    if (nicknameUpperCase === 'NATIVETOKEN'){
+    if (nickname === 'nativeToken'){
         return endpoint.nativeToken.address;
     } else {
         for (const symbol of Object.keys(ethersBase.chains[endpoint.chainName].tokenAddresses)){
-            if (nicknameUpperCase === symbol){
+            if (nickname === symbol){
                 return ethersBase.chains[endpoint.chainName].tokenAddresses[symbol];
             }
         }
@@ -321,7 +320,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     comparatorIsFiat = !!comparatorIsFiat;
     quoteTokenQuantity = quoteTokenQuantity ? quoteTokenQuantity : 1;
     pollIntervalSeconds = pollIntervalSeconds ? pollIntervalSeconds : 10;
-
     const contractAddressToInfoCache = chainDatabase[endpoint.chainId].contractAddressToInfoCache;
 
     log('Resolving token and comparator info...');
@@ -329,29 +327,31 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     for (const cachedInfo of Object.values(contractAddressToInfoCache)){
         if (util.isHexEqual(tokenAddress, cachedInfo.address)){
             token = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
-            if (cachedInfo.comparatorAddressToPairInfo[comparatorAddress]){
-                pair = {...cachedInfo.comparatorAddressToPairInfo[comparatorAddress]};
+            if (cachedInfo.comparatorAddressToPairInfo[comparatorAddress.toUpperCase()]){
+                pair = {...cachedInfo.comparatorAddressToPairInfo[comparatorAddress.toUpperCase()]};
             }
         } else if (util.isHexEqual(comparatorAddress, cachedInfo.address)){
             comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
         } 
     }
     
-    const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
-    const comparatorContract = new ethers.Contract(comparatorAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
+    
+    
     let pairContract;
     const sendOne = endpoint.sendOne;
     const fields = ['symbol', 'name', 'decimals']; 
     await Promise.all([
         (async () => {
             if (!token){ 
+                const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
                 const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
                 token = {symbol, name, decimals, address: tokenAddress};
             }
         })(),
         (async () => {
             if (!comparator){
-                const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
+                const comparatorContract = new ethers.Contract(comparatorAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
+                const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(comparatorContract, field)));
                 comparator = {symbol, name, decimals, address: comparatorAddress};
             }
         })(),
@@ -398,8 +398,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     const trackerPrivate = {
         endpoint,
         exchange,
-        tokenContract,
-        comparatorContract,
         pairContract,
         swapEventFilter: {
             address: [pair.address],
@@ -470,7 +468,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     log(`${token.symbol}-${comparator.symbol} pair added.`);
     return tracker;
 }
-
 
 
 
@@ -1614,6 +1611,7 @@ const UniswapV2 = (() =>{
 
 
 
+
 async function getLiquidityTotalSupplyMarketCap({tracker}){
     const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
     const endpoint = trackerPrivate.endpoint;
@@ -1653,8 +1651,6 @@ async function getLiquidityTotalSupplyMarketCap({tracker}){
 
     return {liquidity, totalSupply, marketCap};
 }
-
-
 
 
 
