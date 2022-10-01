@@ -97,6 +97,7 @@ export async function raceToResolve(keytoFunction){
 }
 
 
+
 export const GENERIC_LOGGING_LISTENER = (swapDetails, tracker) => {
     console.log(
         '    ', swapDetails.action, swapDetails.tokenQuantity.string, tracker.token.symbol, 
@@ -115,4 +116,36 @@ export function makeBigNumber(arg){
 
 export function makeRational(number, decimals){
     return bigRational(number.toString()).divide(bigRational('10').pow(decimals))
+}
+
+
+//https://stackoverflow.com/questions/5767325/how-can-i-remove-a-specific-item-from-an-array
+export function removeArrayItemOnce(arr, value) {
+    var index = arr.indexOf(value);
+    if (index > -1) {
+      arr.splice(index, 1);
+    }
+    return arr;
+  }
+//https://stackoverflow.com/questions/5767325/how-can-i-remove-a-specific-item-from-an-array
+export function removeArrayItemAll(arr, value) {
+    var i = 0;
+    while (i < arr.length) {
+        if (arr[i] === value) {
+            arr.splice(i, 1);
+        } else {
+            ++i;
+        }
+    }
+    return arr;
+}
+
+
+export function toCapitalCase(string){
+    let ret = '';
+    for (const word of string.split(' ')){
+        ret += word.length >= 2 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toUpperCase();
+        ret += ' ';
+    }
+    return ret.trim();
 }

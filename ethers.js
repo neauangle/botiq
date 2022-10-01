@@ -302,11 +302,12 @@ async function getQuoteInComparatorRational(tracker){
 
 
 function resolveTokenAddressFromNickname(endpoint, nickname){
-    if (nickname === 'nativeToken'){
+    const nicknameUpperCase = nickname.toUpperCase()
+    if (nicknameUpperCase === 'NATIVETOKEN'){
         return endpoint.nativeToken.address;
     } else {
         for (const symbol of Object.keys(ethersBase.chains[endpoint.chainName].tokenAddresses)){
-            if (nickname === symbol){
+            if (nicknameUpperCase === symbol){
                 return ethersBase.chains[endpoint.chainName].tokenAddresses[symbol];
             }
         }
@@ -1613,7 +1614,52 @@ const UniswapV2 = (() =>{
 
 
 
+async function getLiquidityTotalSupplyMarketCap({tracker}){
+    const trackerPrivate = trackerDatabase[tracker.id].trackerPrivate;
+    const endpoint = trackerPrivate.endpoint;
+
+    const tokenContract = new ethers.Contract(tracker.token.address, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
+    const totalSupplyBigNumber = await trackerPrivate.endpoint.sendOne(tokenContract, 'totalSupply');
+    const totalSupplyRational = bigRational(totalSupplyBigNumber.toString()).divide(bigRational('10').pow(tracker.token.decimals));
+    const totalSupplyString = totalSupplyRational.toDecimal(tracker.token.decimals);
+    const totalSupply = {
+        rational: totalSupplyRational,
+        string: totalSupplyString,
+    }
+
+    const quote = await getQuote({tracker, tokenQuantity: totalSupply.string});
+    const liquidity = {
+        token: {
+            rational: quote.reserveTokenRational,
+            string: util.formatRational(quote.reserveTokenRational, tracker.token.decimals)
+        },
+        comparator: {
+            rational: quote.reserveComparatorRational,
+            string: util.formatRational(quote.reserveComparatorRational, tracker.comparator.decimals)
+        }
+    }
+
+    const comparatorMarketCap = {rational: totalSupplyRational.multiply(tracker.mostRecentPrices.comparator.rational)};
+    comparatorMarketCap.string = util.formatRational(comparatorMarketCap.rational, tracker.token.decimals);
+    let fiatMarketCap = {rational: null, string: null};
+    if (tracker.mostRecentPrices.fiat.rational){
+        fiatMarketCap.rational = totalSupplyRational.multiply(tracker.mostRecentPrices.fiat.rational);
+        fiatMarketCap.string = util.formatRational(fiatMarketCap.rational, common.FIAT_DEFAULT_DECIMALS); 
+    }
+    const marketCap = {
+        comparator: comparatorMarketCap,
+        fiat: fiatMarketCap
+    }
+
+    return {liquidity, totalSupply, marketCap};
+}
 
 
 
-export default {...ethersBase, createWalletFromPrivateKey, createRandomWallet, createJsonRpcEndpoint, UniswapV2};
+
+
+
+export default {
+    ...ethersBase, createWalletFromPrivateKey, 
+    createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2
+};
