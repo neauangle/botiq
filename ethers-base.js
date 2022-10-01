@@ -88,6 +88,31 @@ const ethers = {
             }
         },
 
+        polygon: {
+            TAG: 'polygon',
+            chainIds: [137],
+            transactionUrl: 'https://polygonscan.com/tx/<transactionHash>',
+            addressUrl: 'https://polygonscan.com/address/<address>',
+            chartUrl: 'https://www.dextools.io/app/polygon/pair-explorer/<pairAddress>',
+            tokenAddresses: {
+                MATIC: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
+                USDC: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+                USDT: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
+                WMATIC: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
+            },
+            fiatAddresses: [
+                '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', //USDC
+                '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', //USDT
+            ],
+            exchanges: {
+                quickswap: {
+                    factoryAddress: '0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32',
+                    routerAddress: '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff',
+                    AbiSet: AbiLibrary.uniswapV2AbiSet
+                }
+            }
+        },
+
         avaxC: {
             TAG: 'avaxC',
             chainIds: [43114],

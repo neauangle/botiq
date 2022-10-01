@@ -93,13 +93,13 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         }
     }
     if (!nativeTokenAddress){
-        throw Error("Unable to resolve a native token address for chain id", chainId, "and none given");
+        throw Error(`Unable to resolve a native token address for chain id ${chainId} and none given`);
     }
     if (!fiatTokenAddress){
-        throw Error("Unable to resolve a default fiat token address for chain id", chainId, "and none given");
+        throw Error(`Unable to resolve a default fiat token address for chain id ${chainId} and none given`);
     }
     if (!defaultExchange){
-        throw Error("Unable to resolve a default fiat token address for chain id", chainId);
+        throw Error(`Unable to resolve a default fiat token address for chain id ${chainId}`);
     }
     const [nativeToken, fiatToken] = await Promise.all([
         getTokenInfoByAddress(nativeTokenAddress),
