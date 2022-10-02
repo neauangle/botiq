@@ -1,6 +1,6 @@
 {
   "name": "botiq",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "High-level library for creating cryptocurrency bots.",
   "keywords": [
     "crypto",
