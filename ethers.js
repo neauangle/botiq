@@ -223,7 +223,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         sendTransaction,
         getBalance,
         transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}){
-            tokenAddress = resolveTokenAddressFromNickname(endpoint, tokenAddress);
+            tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
             return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei});
         },
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
@@ -237,8 +237,9 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
                 comparatorAddress = nativeTokenAddress;
             }
 
-            tokenAddress = resolveTokenAddressFromNickname(endpoint, tokenAddress);
-            comparatorAddress = resolveTokenAddressFromNickname(endpoint, comparatorAddress);
+            tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
+            comparatorAddress = resolveTokenAddressFromSymbol(endpoint, comparatorAddress);
+            console.log(tokenAddress, comparatorAddress)
             
             if (comparatorIsFiat === undefined){
                 if (ethersBase.chains[chainName].fiatAddresses.some(address => util.isHexEqual(comparatorAddress, address))){
@@ -301,17 +302,18 @@ async function getQuoteInComparatorRational(tracker){
 
 
 
-function resolveTokenAddressFromNickname(endpoint, nickname){
-    if (nickname === 'nativeToken'){
+function resolveTokenAddressFromSymbol(endpoint, symbolOrAddress){
+    const symbolUpperCase = symbolOrAddress.toUpperCase();
+    if (symbolUpperCase === 'NATIVETOKEN'){
         return endpoint.nativeToken.address;
     } else {
         for (const symbol of Object.keys(ethersBase.chains[endpoint.chainName].tokenAddresses)){
-            if (nickname === symbol){
+            if (symbolUpperCase === symbol){
                 return ethersBase.chains[endpoint.chainName].tokenAddresses[symbol];
             }
         }
     }
-    return nickname;
+    return symbolOrAddress;
 }
 
 
@@ -437,8 +439,8 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         backendName: 'ethers',
         token, comparator, pair,
         isEqualTo: ({token, comparator, exchangeName}) => {
-            token = resolveTokenAddressFromNickname(trackerPrivate.endpoint, token);
-            comparator = resolveTokenAddressFromNickname(trackerPrivate.endpoint, comparator);
+            token = resolveTokenAddressFromSymbol(trackerPrivate.endpoint, token);
+            comparator = resolveTokenAddressFromSymbol(trackerPrivate.endpoint, comparator);
             const exchangeNamesOkay = !exchangeName || trackerPrivate.exchange.name === exchangeName;
             return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress) && exchangeNamesOkay;
         },

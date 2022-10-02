@@ -124,10 +124,13 @@ const ethers = {
             addressUrl: 'https://snowtrace.io/address/<address>',
             chartUrl: 'https://www.dextools.io/app/avalanche/pair-explorer/<pairAddress>',
             tokenAddresses: {
-                AXAX: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+                AVAX: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
                 USDTe: '0xc7198437980c041c805a1edcba50c1ce5db95118',
-                WAXAX: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+                WAVAX: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
             },
+            fiatAddresses: [
+                '0xc7198437980c041c805a1edcba50c1ce5db95118', //USDT.e
+            ],
             exchanges: {
                 pangolin: {
                     name: 'pangolin',
