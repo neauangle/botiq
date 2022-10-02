@@ -32,6 +32,7 @@ const ethers = {
             exchanges: {
                 //order is important: 0 -> default
                 uniswapV2: {
+                    name: 'uniswapV2',
                     factoryAddress: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f',
                     routerAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
                     AbiSet: AbiLibrary.uniswapV2AbiSet
@@ -55,6 +56,7 @@ const ethers = {
             ],
             exchanges: {
                 spookySwap: {
+                    name: 'spookySwap',
                     factoryAddress: '0x152eE697f2E276fA89E96742e9bB9aB1F2E61bE3',
                     routerAddress: '0xf491e7b69e4244ad4002bc14e878a34207e38c29',
                     AbiSet: AbiLibrary.uniswapV2AbiSet
@@ -81,6 +83,7 @@ const ethers = {
             ],
             exchanges: {
                 pancakeSwapV2: {
+                    name: 'pancakeSwapV2',
                     factoryAddress: '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73',
                     routerAddress: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
                     AbiSet: AbiLibrary.uniswapV2AbiSet
@@ -106,6 +109,7 @@ const ethers = {
             ],
             exchanges: {
                 quickswap: {
+                    name: 'quickswap',
                     factoryAddress: '0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32',
                     routerAddress: '0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff',
                     AbiSet: AbiLibrary.uniswapV2AbiSet
@@ -126,11 +130,13 @@ const ethers = {
             },
             exchanges: {
                 pangolin: {
+                    name: 'pangolin',
                     factoryAddress: '0xefa94DE7a4656D787667C749f7E1223D71E9FD88',
                     routerAddress: '0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106',
                     AbiSet: AbiLibrary.uniswapV2AbiSet
                 },
                 joe: {
+                    name: 'joe',
                     factoryAddress: '0x9Ad6C38BE94206cA50bb0d90783181662f0Cfa10',
                     routerAddress: '0x60aE616a2155Ee3d9A68541Ba4544862310933d4',
                     AbiSet: AbiLibrary.uniswapV2AbiSet

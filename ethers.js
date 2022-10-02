@@ -436,10 +436,11 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     const tracker = await common.createTrackerObject({
         backendName: 'ethers',
         token, comparator, pair,
-        isEqualTo: ({token, comparator}) => {
+        isEqualTo: ({token, comparator, exchangeName}) => {
             token = resolveTokenAddressFromNickname(trackerPrivate.endpoint, token);
             comparator = resolveTokenAddressFromNickname(trackerPrivate.endpoint, comparator);
-            return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress);
+            const exchangeNamesOkay = !exchangeName || trackerPrivate.exchange.name === exchangeName;
+            return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress) && exchangeNamesOkay;
         },
         refreshSwapStream: (tracker, turnOn) => {
             if (turnOn){
