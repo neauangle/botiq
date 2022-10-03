@@ -239,7 +239,6 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
 
             tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
             comparatorAddress = resolveTokenAddressFromSymbol(endpoint, comparatorAddress);
-            console.log(tokenAddress, comparatorAddress)
             
             if (comparatorIsFiat === undefined){
                 if (ethersBase.chains[chainName].fiatAddresses.some(address => util.isHexEqual(comparatorAddress, address))){
@@ -397,6 +396,8 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         writeOutContractAddressToInfoCache();
     }
 
+    try{
+
     const trackerPrivate = {
         endpoint,
         exchange,
@@ -406,35 +407,40 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
             topics: [SWAP_FILTER_HASHED]
         },
         swapHandler: async (log) => {
-            let parsedLog = await getParsedSwapLog(tracker, log);
-            if (!parsedLog){
-                return;
-            }
-        
-            let transactionURL = trackerPrivate.endpoint.blockExplorerURL;
-            if (transactionURL){
-                if (!transactionURL.endsWith('/')){
-                    transactionURL += '/';
+            try {
+                let parsedLog = await getParsedSwapLog(tracker, log);
+                if (!parsedLog){
+                    return;
                 }
-                transactionURL += `tx/${parsedLog.transactionHash}`;
-            }
-        
-            common.processTrade({
-                tracker,
-                action: parsedLog.action,
-                timestamp: Date.now(),//not real timestamp, which would involve getting the block data
-                tokenQuantityRational: parsedLog.tokenQuantity.rational,
-                comparatorQuantityRational: parsedLog.comparatorQuantity.rational,
-                extraProperties: {
-                    parsedLog,
-                    transactionURL
+            
+                let transactionURL = trackerPrivate.endpoint.blockExplorerURL;
+                if (transactionURL){
+                    if (!transactionURL.endsWith('/')){
+                        transactionURL += '/';
+                    }
+                    transactionURL += `tx/${parsedLog.transactionHash}`;
                 }
-            });
+            
+                await common.processTrade({
+                    tracker,
+                    action: parsedLog.action,
+                    timestamp: Date.now(),//not real timestamp, which would involve getting the block data
+                    tokenQuantityRational: parsedLog.tokenQuantity.rational,
+                    comparatorQuantityRational: parsedLog.comparatorQuantity.rational,
+                    extraProperties: {
+                        parsedLog,
+                        transactionURL
+                    }
+                });
+            } catch (error){
+                console.log("Error in internal swap handler:", tracker, error);
+            }
         },
     };
 
     log(`OK. Adding ${token.symbol}-${comparator.symbol} pair...`);
-
+    
+    
     const tracker = await common.createTrackerObject({
         backendName: 'ethers',
         token, comparator, pair,
@@ -467,9 +473,14 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
             
         }
     });
-    
     log(`${token.symbol}-${comparator.symbol} pair added.`);
     return tracker;
+    } catch (error){
+        console.log("CAUGHT ERROR");
+        console.log(error);
+    }
+    
+    
 }
 
 
@@ -480,7 +491,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
 
 
 async function getQuote({tracker, tokenQuantity}){
-    console.log('getting quote');
     if (!tokenQuantity){
         tokenQuantity = 1;
     }
