@@ -441,17 +441,6 @@ async function createTrackerObject({
         await processBeforeFirstPriceUpdate(tracker);
     }
 
-    //wrapping this in try block works to catch the ECONNRESET error, 
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
-    await updatePrice(tracker);
     await updatePrice(tracker);
     return tracker;
 }
