@@ -33,6 +33,7 @@ const ethers = {
                 //order is important: 0 -> default
                 uniswapV2: {
                     name: 'uniswapV2',
+                    url: 'https://app.uniswap.org/#/swap?&chain=mainnet&use=v2&outputCurrency=<tokenAddress>',
                     factoryAddress: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f',
                     routerAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
                     AbiSet: AbiLibrary.uniswapV2AbiSet

@@ -480,6 +480,7 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
 
 
 async function getQuote({tracker, tokenQuantity}){
+    console.log('getting quote');
     if (!tokenQuantity){
         tokenQuantity = 1;
     }

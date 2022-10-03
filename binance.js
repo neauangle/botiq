@@ -364,16 +364,20 @@ function createConnection({apiKey, apiSecret}){
                     log('stream closed for ', connection.id);
                 },
                 message: async (messageString) => {
-                    const messageObject = JSON.parse(messageString);
-                    const streamName = messageObject.stream;
-                    if (messageObject.data.e === 'trade'){
-                        const tracker = streamNameToTracker[streamName];
-                        const timestamp = Number(messageObject.data.T);
-                        const tokenQuantityRational = bigRational(messageObject.data.q);
-                        const priceInComparatorRational = bigRational(messageObject.data.p);
-                        const comparatorQuantityRational = priceInComparatorRational.multiply(tokenQuantityRational);
-                        common.processTrade({tracker, action: "TRADE", timestamp, tokenQuantityRational, comparatorQuantityRational});
-                    }  
+                    try {
+                        const messageObject = JSON.parse(messageString);
+                        const streamName = messageObject.stream;
+                        if (messageObject.data.e === 'trade'){
+                            const tracker = streamNameToTracker[streamName];
+                            const timestamp = Number(messageObject.data.T);
+                            const tokenQuantityRational = bigRational(messageObject.data.q);
+                            const priceInComparatorRational = bigRational(messageObject.data.p);
+                            const comparatorQuantityRational = priceInComparatorRational.multiply(tokenQuantityRational);
+                            await common.processTrade({tracker, action: "TRADE", timestamp, tokenQuantityRational, comparatorQuantityRational});
+                        }  
+                    } catch (error){
+                        console.log("Error processing binance trade:", error, messageString)
+                    }
                 }
             });
             connectionPrivate.resetConnectionTimeout = setTimeout(resetConnection, 23 * 60 * 60 * 1000, connection.id);
@@ -386,8 +390,6 @@ function createConnection({apiKey, apiSecret}){
 }
 
 
-
-//UNTESTED
 async function swap({connectionId, type, tokenSymbol, comparatorSymbol, exactSymbol, exactQuantity}){
     const exactQuantityString = exactQuantity.toString();
     const ticker = `${tokenSymbol}${comparatorSymbol}`.toUpperCase();
@@ -461,7 +463,7 @@ async function swap({connectionId, type, tokenSymbol, comparatorSymbol, exactSym
         comparatorDecimals: symbolToDecimals[comparatorSymbol],
         possibleTrackers: getTrackersBySymbols({tokenSymbol, comparatorSymbol})
     });
-    
+        
     return {
         ...response,
         ...tradeDetails

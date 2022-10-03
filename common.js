@@ -214,46 +214,50 @@ async function createTrackerObject({
             trackerData.keyToPollRegistration[key] = {pollTimeout: null};
 
             const pollHandler = async () => {
-                let mostRecentPrices = tracker.mostRecentPrices;
-                if (trackerData.isStreamingTestDataSemaphore === 0){
-                    mostRecentPrices = await updatePrice(tracker);
-                }
-                const eventObject = {
-                    action: "POLL",
-                    trackerId: tracker.id,
-                    timestamp: mostRecentPrices.timestamp,
-                    ... await deriveTradeDetails({
-                        tokenQuantityString: '1', 
-                        comparatorQuantityString: mostRecentPrices.comparator.string, 
-                        comparatorDecimals: comparator.decimals,
-                        possibleTrackers: [tracker],
-                        timestamp: mostRecentPrices.timestamp
-                    })
-                };
-                if (trackerData.isStreamingTestDataSemaphore === 0){
-                    trackerData.keyToPollRegistration[key].pollTimeout = setTimeout(pollHandler, pollIntervalSeconds*1000);
-                    listener(eventObject, tracker, key);
-                } else {
-                    listener(eventObject, tracker, key);
-                    const startTimestamp = tracker.mostRecentPrices.timestamp;
-                    await new Promise((resolve, reject) => {
-                        const pollSwapKey = tracker.addSwapListener({listener: (details => {
-                            if ((details.timestamp - startTimestamp)/1000 > pollIntervalSeconds){
+                try {
+                    let mostRecentPrices = tracker.mostRecentPrices;
+                    if (trackerData.isStreamingTestDataSemaphore === 0){
+                        mostRecentPrices = await updatePrice(tracker);
+                    }
+                    const eventObject = {
+                        action: "POLL",
+                        trackerId: tracker.id,
+                        timestamp: mostRecentPrices.timestamp,
+                        ... await deriveTradeDetails({
+                            tokenQuantityString: '1', 
+                            comparatorQuantityString: mostRecentPrices.comparator.string, 
+                            comparatorDecimals: comparator.decimals,
+                            possibleTrackers: [tracker],
+                            timestamp: mostRecentPrices.timestamp
+                        })
+                    };
+                    if (trackerData.isStreamingTestDataSemaphore === 0){
+                        trackerData.keyToPollRegistration[key].pollTimeout = setTimeout(pollHandler, pollIntervalSeconds*1000);
+                        listener(eventObject, tracker, key);
+                    } else {
+                        listener(eventObject, tracker, key);
+                        const startTimestamp = tracker.mostRecentPrices.timestamp;
+                        await new Promise((resolve, reject) => {
+                            const pollSwapKey = tracker.addSwapListener({listener: (details => {
+                                if ((details.timestamp - startTimestamp)/1000 > pollIntervalSeconds){
+                                    tracker.removeListener({key: pollSwapKey});
+                                    resolve();
+                                }
+                            })});
+                            if (!trackerData.keyToPollRegistration[key]){
                                 tracker.removeListener({key: pollSwapKey});
                                 resolve();
+                            } else {
+                                trackerData.pollSwapKeyToInfo[pollSwapKey] = {key, resolve};
                             }
-                        })});
-                        if (!trackerData.keyToPollRegistration[key]){
-                            tracker.removeListener({key: pollSwapKey});
-                            resolve();
-                        } else {
-                            trackerData.pollSwapKeyToInfo[pollSwapKey] = {key, resolve};
-                        }
-                        
-                    });
-                    if (trackerData.keyToPollRegistration[key]){
-                        setTimeout(pollHandler, 0);
-                    } 
+                            
+                        });
+                        if (trackerData.keyToPollRegistration[key]){
+                            setTimeout(pollHandler, 0);
+                        } 
+                    }
+                } catch (error){
+                    console.log("Error in internal pollHandler:", error, tracker)
                 }
             }
             trackerData.eventEmitter.emit(TRACKER_DATA_EVENTS.USER_LISTENER_CONNECTED);
@@ -436,6 +440,18 @@ async function createTrackerObject({
     if (processBeforeFirstPriceUpdate){
         await processBeforeFirstPriceUpdate(tracker);
     }
+
+    //wrapping this in try block works to catch the ECONNRESET error, 
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
+    await updatePrice(tracker);
     await updatePrice(tracker);
     return tracker;
 }
@@ -449,15 +465,16 @@ async function processTrade({tracker, action, timestamp, tokenQuantityRational, 
     const tokenQuantityString = util.formatRational(tokenQuantityRational, tracker.token.decimals);
     const comparatorQuantityString = util.formatRational(comparatorQuantityRational, tracker.comparator.decimals);
     const averageTokenPriceComparatorRational = comparatorQuantityRational.divide(tokenQuantityRational);
-    updatePrice(tracker, averageTokenPriceComparatorRational, timestamp);
-
+    
+    await updatePrice(tracker, averageTokenPriceComparatorRational, timestamp);
+    
     const tradeDetails = await deriveTradeDetails({
         tokenQuantityString,
         comparatorQuantityString,
         comparatorDecimals: tracker.comparator.decimals,
         possibleTrackers: [tracker]
     });
-  
+
     const eventObject = {
         trackerId: tracker.id,
         timestamp,
