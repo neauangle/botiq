@@ -396,8 +396,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         writeOutContractAddressToInfoCache();
     }
 
-    try{
-
     const trackerPrivate = {
         endpoint,
         exchange,
@@ -475,12 +473,6 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     });
     log(`${token.symbol}-${comparator.symbol} pair added.`);
     return tracker;
-    } catch (error){
-        console.log("CAUGHT ERROR");
-        console.log(error);
-    }
-    
-    
 }
 
 
