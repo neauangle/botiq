@@ -1667,6 +1667,6 @@ async function getLiquidityTotalSupplyMarketCap({tracker}){
 
 
 export default {
-    ...ethersBase, createWalletFromPrivateKey, ethers
+    ...ethersBase, createWalletFromPrivateKey, ethers,
     createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2
 };
