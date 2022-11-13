@@ -17,6 +17,12 @@ export default {
 /*
     TODO
     -----
+make a config set in addtracker or addendpoint to get rid of this magic number
+if (uplinkTracker.mostRecentPrices.comparator.rational === null
+            || Date.now() - uplinkTracker.mostRecentPrices.timestamp > 30000){
+                await updatePrice(uplinkTracker);
+
+
 add -ve amount support for binance
 add percentage -ve support for ethers and binance (leave a percentage of current balance)
 ethers

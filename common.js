@@ -55,7 +55,7 @@ async function getFiatQuantityRational({tracker, priceRational, priceIsInToken})
         for (let i = (priceIsInToken ? 0 : 1); i < trackerLinkToFiat.length; ++i){
             const uplinkTracker = trackerLinkToFiat[i];
             if (uplinkTracker.mostRecentPrices.comparator.rational === null
-            || Date.now() - uplinkTracker.mostRecentPrices.timestamp > 30000){
+            || Date.now() - uplinkTracker.mostRecentPrices.timestamp > 10000){
                 await updatePrice(uplinkTracker);
             }           
             fiatQuantityRational = fiatQuantityRational.multiply(uplinkTracker.mostRecentPrices.comparator.rational);

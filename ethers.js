@@ -111,14 +111,14 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         return ethers.utils.formatUnits(await sendOne(endpoint.provider, 'getGasPrice'), 'gwei');
     }
 
-    async function getTokenInfoByAddress(tokenAddress){
+    async function getTokenInfoByAddress(tokenAddress, isNft=false){
         let info;
         if (chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()]){
             info = chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()]
         } else {
             const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
-            const fields = ['symbol', 'name', 'decimals'];
-            const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
+            const [symbol, name] = await Promise.all(['symbol', 'name'].map(field => sendOne(tokenContract, field)));
+            const decimals = isNft ? 0 : await sendOne(tokenContract, 'decimals');
             info = {symbol, name, decimals, address:tokenAddress, comparatorAddressToPairInfo: {}};
             chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()] = info;
             writeOutContractAddressToInfoCache();
@@ -132,19 +132,17 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         return obj[functionName](...args);
     }
 
-    async function getBalance({walletAddress, tokenAddress}){
+    async function getBalance({walletAddress, tokenAddress, isNft}){
         if (!tokenAddress){
             tokenAddress = nativeToken.address;
         }
-        const info = await getTokenInfoByAddress(tokenAddress);
-
+        const info = await getTokenInfoByAddress(tokenAddress, isNft);
         let balanceBigNumber = BigNumber.from(0);
         if (util.isHexEqual(info.address, nativeToken.address)){
             balanceBigNumber = await sendOne(provider, 'getBalance', walletAddress);
         }
         const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
         balanceBigNumber = balanceBigNumber.add(await sendOne(tokenContract, 'balanceOf', walletAddress));
-
         const rational = bigRational(balanceBigNumber).divide(bigRational('10').pow(info.decimals));
         const string = util.formatRational(rational, info.decimals);
         return {rational, string};
@@ -1578,27 +1576,27 @@ const UniswapV2 = (() =>{
 
 
     return {
-        buyTokensWithExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
-            return swapUniswapV2({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        buyTokensWithExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'buyTokensWithExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee});
         },
-        sellTokensForExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
-            return swapUniswapV2({tracker, privateKey, method: 'sellTokensForExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        sellTokensForExact: ({privateKey, tracker, exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'sellTokensForExact', exactQuantity: exactComparatorQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee});
         },
-        buyExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
-            return swapUniswapV2({tracker, privateKey, method: 'buyExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        buyExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'buyExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee});
         },
-        sellExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
-            return swapUniswapV2({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+        sellExactTokens: ({privateKey, tracker, exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}) => {
+            return swapUniswapV2({tracker, privateKey, method: 'sellExactTokens', exactQuantity: exactTokenQuantity, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee});
         },
         
-        swap: async function({privateKey, tracker, action, amount, specifying, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}){
+        swap: async function({privateKey, tracker, action, amount, specifying, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee}){
             let method = action.toLowerCase();
-            if (specifying.toUpperCase().endsWith('EXACTTOKENS')){
+            if (specifying.toUpperCase().includes('token')){
                 method += 'ExactTokens';
             } else {
-                method += action === 'buy' ? 'TokensWithExact' : 'TokensForExact'
+                method += method === 'buy' ? 'TokensWithExact' : 'TokensForExact'
             }
-            return swapUniswapV2({tracker, privateKey, method, exactQuantity: amount, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei});
+            return swapUniswapV2({tracker, privateKey, method, exactQuantity: amount, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei, justReturnEstimatedGasFee});
 
         },
         addLiquidity: ({privateKey, tracker, tokenQuantity, minNativeReserved, slippagePercent, timeoutSecs, gasPercentModifier, maxGasPriceGwei}) => {
@@ -1669,6 +1667,6 @@ async function getLiquidityTotalSupplyMarketCap({tracker}){
 
 
 export default {
-    ...ethersBase, createWalletFromPrivateKey, 
+    ...ethersBase, createWalletFromPrivateKey, ethers
     createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2
 };
