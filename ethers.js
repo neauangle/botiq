@@ -244,6 +244,18 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
                 }
             }
 
+            if (chainDatabase[chainId] 
+            && chainDatabase[chainId].tokenAddressToTrackerIds[tokenAddress.toUpperCase()]){
+                const trackerIds =  chainDatabase[chainId].tokenAddressToTrackerIds[tokenAddress.toUpperCase()];
+                for (const trackerId of trackerIds){
+                    if (trackerDatabase[trackerId].tracker.isEqualTo({
+                    token: tokenAddress, comparator: comparatorAddress, 
+                    exchangeName: exchange.name, chainName: endpoint.chainName})){
+                        return trackerDatabase[trackerId].tracker;
+                    }
+                }
+            }
+
             return createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds});
         },
         addContractEventListener: function({contractAddress, abiFragment, listener}){
@@ -283,7 +295,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
 
 function getUplinkTrackers(tracker){
     const uplinkTrackers = [];
-    const uplinkTrackerIds = chainDatabase[tracker.chainId].tokenAddressToTrackerIds[tracker.comparator.address];
+    const uplinkTrackerIds = chainDatabase[tracker.chainId].tokenAddressToTrackerIds[tracker.comparator.addressUpperCase];
     if (uplinkTrackerIds){
         for (const trackerId of uplinkTrackerIds){
             uplinkTrackers.push(trackerDatabase[trackerId].tracker);
@@ -315,6 +327,8 @@ function resolveTokenAddressFromSymbol(endpoint, symbolOrAddress){
 
 
 async function createTracker({endpoint, exchange, tokenAddress, comparatorAddress, comparatorIsFiat, quoteTokenQuantity,pollIntervalSeconds}){
+    const tokenAddressUpperCase = tokenAddress.toUpperCase();
+    const comparatorAddressUpperCase = comparatorAddress.toUpperCase();
     comparatorAddress = comparatorAddress ? comparatorAddress : endpoint.nativeToken.address;
     comparatorIsFiat = !!comparatorIsFiat;
     quoteTokenQuantity = quoteTokenQuantity ? quoteTokenQuantity : 1;
@@ -325,12 +339,12 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     let token, comparator, pair;
     for (const cachedInfo of Object.values(contractAddressToInfoCache)){
         if (util.isHexEqual(tokenAddress, cachedInfo.address)){
-            token = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
-            if (cachedInfo.comparatorAddressToPairInfo[comparatorAddress.toUpperCase()]){
-                pair = {...cachedInfo.comparatorAddressToPairInfo[comparatorAddress.toUpperCase()]};
+            token = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address, addressUpperCase: cachedInfo.address.toUpperCase()};
+            if (cachedInfo.comparatorAddressToPairInfo[comparatorAddressUpperCase]){
+                pair = {...cachedInfo.comparatorAddressToPairInfo[comparatorAddressUpperCase]};
             }
         } else if (util.isHexEqual(comparatorAddress, cachedInfo.address)){
-            comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address};
+            comparator = {decimals: cachedInfo.decimals, symbol: cachedInfo.symbol, name: cachedInfo.name, address: cachedInfo.address,  addressUpperCase: cachedInfo.address.toUpperCase()};
         } 
     }
     
@@ -344,14 +358,14 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
             if (!token){ 
                 const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
                 const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(tokenContract, field)));
-                token = {symbol, name, decimals, address: tokenAddress};
+                token = {symbol, name, decimals, address: tokenAddress, addressUpperCase: tokenAddress.toUpperCase()};
             }
         })(),
         (async () => {
             if (!comparator){
                 const comparatorContract = new ethers.Contract(comparatorAddress, ethersBase.AbiLibrary.erc20Token, endpoint.provider);
                 const [symbol, name, decimals] = await Promise.all(fields.map(field => sendOne(comparatorContract, field)));
-                comparator = {symbol, name, decimals, address: comparatorAddress};
+                comparator = {symbol, name, decimals, address: comparatorAddress, addressUpperCase: comparatorAddress.toUpperCase()};
             }
         })(),
         (async () => {
@@ -367,7 +381,8 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
                     decimals, 
                     comparatorIsToken1: util.isHexEqual(token0, tokenAddress),
                     comparatorIsFiat,
-                    address: pairAddress
+                    address: pairAddress,
+                    addressUpperCase: pairAddress.toUpperCase()
                 };
             }
         })()
@@ -375,19 +390,19 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
 
     let isChainDatabaseDirty = false;
     [token, comparator].map(info => {
-        if (!contractAddressToInfoCache[info.address.toUpperCase()]){
-            contractAddressToInfoCache[info.address.toUpperCase()] = {...info, comparatorAddressToPairInfo: {}};
+        if (!contractAddressToInfoCache[info.addressUpperCase]){
+            contractAddressToInfoCache[info.addressUpperCase] = {...info, comparatorAddressToPairInfo: {}};
             isChainDatabaseDirty = true;
         }
     });
-    if (!contractAddressToInfoCache[tokenAddress.toUpperCase()].comparatorAddressToPairInfo[comparatorAddress.toUpperCase()]){
-        contractAddressToInfoCache[tokenAddress.toUpperCase()].comparatorAddressToPairInfo[comparatorAddress.toUpperCase()] = {...pair};
+    if (!contractAddressToInfoCache[tokenAddressUpperCase].comparatorAddressToPairInfo[comparatorAddressUpperCase]){
+        contractAddressToInfoCache[tokenAddressUpperCase].comparatorAddressToPairInfo[comparatorAddressUpperCase] = {...pair};
         isChainDatabaseDirty = true
     }
-    if (!contractAddressToInfoCache[comparatorAddress.toUpperCase()].comparatorAddressToPairInfo[tokenAddress.toUpperCase()]){
+    if (!contractAddressToInfoCache[comparatorAddressUpperCase].comparatorAddressToPairInfo[tokenAddressUpperCase]){
         const invertedPairInfo = {...pair};
         invertedPairInfo.comparatorIsToken1 = !invertedPairInfo.comparatorIsToken1;
-        contractAddressToInfoCache[comparatorAddress.toUpperCase()].comparatorAddressToPairInfo[tokenAddress.toUpperCase()] = invertedPairInfo;
+        contractAddressToInfoCache[comparatorAddressUpperCase].comparatorAddressToPairInfo[tokenAddressUpperCase] = invertedPairInfo;
         isChainDatabaseDirty = true;
     }
     if (isChainDatabaseDirty){
@@ -440,11 +455,12 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
     const tracker = await common.createTrackerObject({
         backendName: 'ethers',
         token, comparator, pair,
-        isEqualTo: ({token, comparator, exchangeName}) => {
+        isEqualTo: ({token, comparator, exchangeName, chainName}) => {
             token = resolveTokenAddressFromSymbol(trackerPrivate.endpoint, token);
             comparator = resolveTokenAddressFromSymbol(trackerPrivate.endpoint, comparator);
             const exchangeNamesOkay = !exchangeName || trackerPrivate.exchange.name === exchangeName;
-            return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress) && exchangeNamesOkay;
+            const chainNamesOkay = !chainName || tracker.chainName === chainName;
+            return util.isHexEqual(token, tokenAddress) && util.isHexEqual(comparator, comparatorAddress) && exchangeNamesOkay && chainNamesOkay;
         },
         refreshSwapStream: (tracker, turnOn) => {
             if (turnOn){
@@ -457,16 +473,16 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
         getUplinkTrackers,
         processBeforeFirstPriceUpdate: (tracker) => {
             trackerDatabase[tracker.id] = {tracker, trackerPrivate};
-            if (!chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddress]){
-                chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddress] = [];
+            if (!chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddressUpperCase]){
+                chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddressUpperCase] = [];
             }
-            chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddress].push(tracker.id);
+            chainDatabase[endpoint.chainId].tokenAddressToTrackerIds[tokenAddressUpperCase].push(tracker.id);
             chainDatabase[endpoint.chainId].trackerIds.push(tracker.id);
         },
         extraProperties: {
             chainId: endpoint.chainId,
-
-            
+			chainName: endpoint.chainName,
+			exchangeName: exchange.name,
         }
     });
     log(`${token.symbol}-${comparator.symbol} pair added.`);
@@ -587,7 +603,6 @@ async function checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGa
         log('Retrieving gas estimate...');
         
         const feeData =  await endpoint.sendOne(endpoint.provider, 'getFeeData');
-        //console.log(feeData);
         if (feeData.maxPriorityFeePerGas){
 
             const recommendedPriorityFeeStringGwei = ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, 'gwei');
@@ -1202,7 +1217,6 @@ const UniswapV2 = (() =>{
         }
     
         const functionToCall = trackerPrivate.endpoint[justReturnEstimatedGasFee ? 'estimateMinimumGasLimit' : 'sendTransaction'];
-        //console.log(overrides);
         
         //send transaction
         const deadline = Math.floor(Date.now() / 1000) + timeoutSecs; //deadline is unix timestamp (seconds, not ms)
@@ -1556,7 +1570,6 @@ const UniswapV2 = (() =>{
         for (const log of logs){
             if (util.isHexEqual(log.topics[0], TRANSFER_FILTER_HASHED)){
                 const [from, to, amountBigNumber] = [log.topics[1], log.topics[2], BigNumber.from(log.data)];
-                console.log(from, to, amountBigNumber);
                 for (const quantityKey of Object.keys(quantityMap)){
                     const quantityEntryInfo = quantityMap[quantityKey];
                     
