@@ -229,7 +229,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         estimateMinimumGasLimit,
         sendTransaction,
         getBalance,
-        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}, txCallback){
+        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback}){
             return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback});
         },
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
@@ -611,41 +611,8 @@ async function checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGa
         log('Retrieving gas estimate...');
         
         const feeData =  await endpoint.sendOne(endpoint.provider, 'getFeeData');
-        if (feeData.maxPriorityFeePerGas){
-
-            const recommendedPriorityFeeStringGwei = ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, 'gwei');
-            log(`Recommended gas priority fee per gas: ${recommendedPriorityFeeStringGwei}`);
-            let priorityFeeStringGwei;
-            if (gasPercentModifierString){
-                gasPercentModifierString = util.trim(gasPercentModifierString, '%');
-                priorityFeeStringGwei = bigRational(recommendedPriorityFeeStringGwei).multiply(bigRational(gasPercentModifierString).divide(100)).toDecimal(endpoint.nativeToken.decimals);
-                log(`Calculated priority fee per gas: ${gasPercentModifierString}% of ${recommendedPriorityFeeStringGwei} = ${priorityFeeStringGwei}`);
-            } else {
-                priorityFeeStringGwei = recommendedPriorityFeeStringGwei
-                log(`Calculated priority fee per gas: recommended = ${priorityFeeStringGwei}`);
-            }
-           
-            
-            const recommendedMaxFeeStringGwei = ethers.utils.formatUnits(feeData.maxFeePerGas, 'gwei');
-            //log(`Recommended max fee per gas: ${recommendedMaxFeeStringGwei}`);
-            let maxFeeStringGwei;
-            if (maxGasPriceGweiString){
-                maxFeeStringGwei = maxGasPriceGweiString;
-            } else {
-                const recBaseFeePerGasRat = bigRational(recommendedMaxFeeStringGwei).minus(recommendedPriorityFeeStringGwei).add(priorityFeeStringGwei);
-                maxFeeStringGwei = recBaseFeePerGasRat.toDecimal(endpoint.nativeToken.decimals);
-            }
-            log(`Max fee per gas: ${maxFeeStringGwei}`);
-            //2 x base fee + priority fee is generally given as a good rule of thumb max
-            const max = bigRational(recommendedMaxFeeStringGwei).minus(recommendedPriorityFeeStringGwei).add(priorityFeeStringGwei);
-            if (max.greater(maxFeeStringGwei)){
-                throw Error(`2 x base fee + priority fee (${max.toDecimal(endpoint.nativeToken.decimals)}) is < max fee per gas (${maxFeeStringGwei})`)
-            }
-
-            overrides.maxFeePerGas = BigNumber.from(bigRational(maxFeeStringGwei).multiply(bigRational('10').pow(9)).toDecimal(0));
-            overrides.maxPriorityFeePerGas = BigNumber.from(bigRational(priorityFeeStringGwei).multiply(bigRational('10').pow(9)).toDecimal(0));
-
-        } else {
+        console.log('feeData', feeData)
+        if (feeData.gasPrice){
             const recommendedGasPerUnitBigNumber = feeData.gasPrice;
             const recommendedGasPerUnitStringGwei = ethers.utils.formatUnits(recommendedGasPerUnitBigNumber, 'gwei');
             log(`Recommended gas price: ${recommendedGasPerUnitStringGwei}`);
@@ -695,6 +662,40 @@ async function checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGa
 
             //nine decimals to go from gwei(9) to wei(0)
             overrides.gasPrice = BigNumber.from(gasPriceToUseGweiRational.multiply(bigRational('10').pow(9)).toDecimal(0));
+        
+        } else {
+            const recommendedPriorityFeeStringGwei = ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, 'gwei');
+            log(`Recommended gas priority fee per gas: ${recommendedPriorityFeeStringGwei}`);
+            let priorityFeeStringGwei;
+            if (gasPercentModifierString){
+                gasPercentModifierString = util.trim(gasPercentModifierString, '%');
+                priorityFeeStringGwei = bigRational(recommendedPriorityFeeStringGwei).multiply(bigRational(gasPercentModifierString).divide(100)).toDecimal(endpoint.nativeToken.decimals);
+                log(`Calculated priority fee per gas: ${gasPercentModifierString}% of ${recommendedPriorityFeeStringGwei} = ${priorityFeeStringGwei}`);
+            } else {
+                priorityFeeStringGwei = recommendedPriorityFeeStringGwei
+                log(`Calculated priority fee per gas: recommended = ${priorityFeeStringGwei}`);
+            }
+           
+            
+            const recommendedMaxFeeStringGwei = ethers.utils.formatUnits(feeData.maxFeePerGas, 'gwei');
+            //log(`Recommended max fee per gas: ${recommendedMaxFeeStringGwei}`);
+            let maxFeeStringGwei;
+            if (maxGasPriceGweiString){
+                maxFeeStringGwei = maxGasPriceGweiString;
+            } else {
+                const recBaseFeePerGasRat = bigRational(recommendedMaxFeeStringGwei).minus(recommendedPriorityFeeStringGwei).add(priorityFeeStringGwei);
+                maxFeeStringGwei = recBaseFeePerGasRat.toDecimal(endpoint.nativeToken.decimals);
+            }
+            log(`Max fee per gas: ${maxFeeStringGwei}`);
+            //2 x base fee + priority fee is generally given as a good rule of thumb max
+            const max = bigRational(recommendedMaxFeeStringGwei).minus(recommendedPriorityFeeStringGwei).add(priorityFeeStringGwei);
+            if (max.greater(maxFeeStringGwei)){
+                throw Error(`2 x base fee + priority fee (${max.toDecimal(endpoint.nativeToken.decimals)}) is < max fee per gas (${maxFeeStringGwei})`)
+            }
+
+            overrides.maxFeePerGas = BigNumber.from(bigRational(maxFeeStringGwei).multiply(bigRational('10').pow(9)).toDecimal(0));
+            overrides.maxPriorityFeePerGas = BigNumber.from(bigRational(priorityFeeStringGwei).multiply(bigRational('10').pow(9)).toDecimal(0));
+
         }
     }
     return overrides;
