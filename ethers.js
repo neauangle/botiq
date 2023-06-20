@@ -63,6 +63,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
 
     const limiter =  new RateLimiter({ tokensPerInterval: rateLimitPerSecond, interval: "second" });
     const provider = new ethers.providers.JsonRpcProvider(accessURL);
+    let endpoint;
     const chainId = (await provider.getNetwork()).chainId;
     if (!chainDatabase[chainId]){
         chainDatabase[chainId] = {
@@ -105,13 +106,19 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         getTokenInfoByAddress(nativeTokenAddress),
         getTokenInfoByAddress(fiatTokenAddress)
     ])
-
+	
+	 async function getRecommendedGas(){
+        return ethers.utils.formatEther(await sendOne(endpoint.provider, 'getGasPrice'));
+    }
 
     async function getRecommendedGasGwei(){
         return ethers.utils.formatUnits(await sendOne(endpoint.provider, 'getGasPrice'), 'gwei');
     }
 
     async function getTokenInfoByAddress(tokenAddress, isNft=false){
+        if (endpoint){
+            tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress)
+        }
         let info;
         if (chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()]){
             info = chainDatabase[chainId].contractAddressToInfoCache[tokenAddress.toUpperCase()]
@@ -136,6 +143,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         if (!tokenAddress){
             tokenAddress = nativeToken.address;
         }
+		tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
         const info = await getTokenInfoByAddress(tokenAddress, isNft);
         let balanceBigNumber = BigNumber.from(0);
         if (util.isHexEqual(info.address, nativeToken.address)){
@@ -206,7 +214,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
     }
 
 
-    const endpoint = {
+    endpoint = {
         provider,
         chainId,
         chainName,
@@ -220,9 +228,8 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         estimateMinimumGasLimit,
         sendTransaction,
         getBalance,
-        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}){
-            tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
-            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei});
+        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}, txCallback){
+            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback});
         },
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
             return generalContractCall({endpoint, contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei});
@@ -779,8 +786,7 @@ async function getGasFeeSpent(endpoint, transactionResponse, transactionReceipt)
 
 
 
-//untested - transactions stalling
-async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei}){
+async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, value, txCallback}){
     let quantityString = `${quantity}`.trim();
     let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
     let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
@@ -789,7 +795,8 @@ async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, qu
     const nonceManagerProvider = getNonceManagerProvider(wallet);
 
     const overrides = await checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGasPriceGweiString);
-
+	
+	tokenAddress = resolveTokenAddressFromSymbol(endpoint, tokenAddress);
     const token = await endpoint.getTokenInfoByAddress(tokenAddress);
 
     let walletBalanceOfExact;
@@ -815,9 +822,15 @@ async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, qu
         transactionResponse = await endpoint.sendTransaction(nonceManagerProvider, 'sendTransaction', overrides);
     } else {
         const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, nonceManagerProvider);
+		if (value){
+			overrides.value = value;
+		}
         transactionResponse = await endpoint.sendTransaction(tokenContract, 'transfer', toWalletAddress, exactQuantityBigNumber, overrides);
     }
-    
+	
+	if (txCallback){
+		await txCallback(transactionResponse.hash);
+	}
     log(`Transaction ${transactionResponse.hash} sent - awaiting confirmation...`);
     const transactionReceipt = await waitForTransaction(endpoint, transactionResponse);
     log('OK! TX: ' + transactionReceipt.transactionHash);
@@ -1680,6 +1693,6 @@ async function getLiquidityTotalSupplyMarketCap({tracker}){
 
 
 export default {
-    ...ethersBase, createWalletFromPrivateKey, ethers,
+    ...ethersBase, createWalletFromPrivateKey, ethers, waitForTransaction,
     createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2
 };
