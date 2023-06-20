@@ -222,6 +222,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         blockExplorerURL,
         sendCustomData,
         sendCustomDataString,
+        getRecommendedGas,
         getRecommendedGasGwei,
         getTokenInfoByAddress,
         sendOne,
