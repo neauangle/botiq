@@ -726,26 +726,37 @@ async function waitForTransaction(endpoint, transactionResponse){
             return transactionReceipt;
         })(),
         (async () => {
+            let mempoolTries = 0;
             while (!finished) {
-                await util.awaitMs(3000);
-                if (finished){ return; }
-                const mempoolTxResponse = await endpoint.sendOne(endpoint.provider, 'getTransaction', transactionResponse.hash);
-                if (finished){ return; }
-                if (!mempoolTxResponse){
-                    return null;
-                } else if (mempoolTxResponse.confirmations > 0){
-                    const transactionReceipt = await mempoolTxResponse.wait();
+                let mempoolTxResponse;
+                while (!mempoolTxResponse){
+                    mempoolTxResponse = await endpoint.sendOne(endpoint.provider, 'getTransaction', transactionResponse.hash);
                     if (finished){ return; }
+                    if (mempoolTxResponse){
+                        break;
+                    }
+                    mempoolTries += 1;
+                    if (mempoolTries > 10){
+                        console.log('no mempool response');
+                        return null;
+                    }
+                    await util.awaitMs(2000);
+                    if (finished){return; }
+                }
+
+                if (mempoolTxResponse.confirmations > 0){
+                    const transactionReceipt = await mempoolTxResponse.wait();
+                    if (finished){ console.log('f'); return; }
                     if (transactionReceipt.hasOwnProperty('status') && transactionReceipt.status === 0){
                         throw Error("Transaction reverted: " + JSON.stringify(transactionReceipt));
                     }
-                    console.log('returned mempool tx')
                     return transactionReceipt;
                 }
             }
         })()
     ]);
     finished = true;
+    console.log('finished', result);
     if (!result){
         throw Error(`Transaction ${transactionResponse.hash} failed`);
     }
