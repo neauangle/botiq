@@ -3,6 +3,7 @@ import ethers from './ethers.js';
 import * as modules from './modules/index.js';
 import * as util from './util.js';
 
+import * as logger from './logger.js';
 
 
 
@@ -12,6 +13,7 @@ export default {
     ethers,
     modules,
     util,
+	setLogFunction: logger.setLogFunction
 }
 
 /*

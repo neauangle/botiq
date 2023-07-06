@@ -59,7 +59,7 @@ function writeOutContractAddressToInfoCache(){
 
 
 async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplorerURL, fiatTokenAddress, nativeTokenAddress, defaultExchange, omitNativeTokenTrackerInit}){
-    console.log('Adding endpoint...');
+    log('Adding endpoint...');
 
     const limiter =  new RateLimiter({ tokensPerInterval: rateLimitPerSecond, interval: "second" });
     const provider = new ethers.providers.JsonRpcProvider(accessURL);
@@ -159,7 +159,6 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
     async function estimateMinimumGasLimit(contract, ...args){
         let gasLimit;
         if (args[0] === 'sendTransaction'){
-            console.log('uh oh');
             //provider.estimateGas( transaction ) ⇒ Promise< BigNumber >
             gasLimit = await sendOne(contract, 'estimateGas', args[1], );
         } else {
@@ -294,7 +293,7 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
     }
     
 
-    console.log('Endpoint added.');
+    log('Endpoint added.');
 
     return endpoint;
 }
@@ -456,7 +455,7 @@ async function createTracker({endpoint, exchange, tokenAddress, comparatorAddres
                     }
                 });
             } catch (error){
-                console.log("Error in internal swap handler:", tracker, error);
+                log("Error in internal swap handler:", tracker, error);
             }
         },
     };
@@ -615,7 +614,6 @@ async function checkGasPriceConstraint(endpoint, gasPercentModifierString, maxGa
         log('Retrieving gas estimate...');
         
         const feeData =  await endpoint.sendOne(endpoint.provider, 'getFeeData');
-        console.log('feeData', feeData)
         if (feeData.gasPrice){
             const recommendedGasPerUnitBigNumber = feeData.gasPrice;
             const recommendedGasPerUnitStringGwei = ethers.utils.formatUnits(recommendedGasPerUnitBigNumber, 'gwei');
@@ -737,7 +735,7 @@ async function waitForTransaction(endpoint, transactionResponse){
                     }
                     mempoolTries += 1;
                     if (mempoolTries > 10){
-                        console.log('no mempool response');
+                        log('no mempool response');
                         return null;
                     }
                     await util.awaitMs(2000);
@@ -746,7 +744,7 @@ async function waitForTransaction(endpoint, transactionResponse){
 
                 if (mempoolTxResponse.confirmations > 0){
                     const transactionReceipt = await mempoolTxResponse.wait();
-                    if (finished){ console.log('f'); return; }
+                    if (finished){ return; }
                     if (transactionReceipt.hasOwnProperty('status') && transactionReceipt.status === 0){
                         throw Error("Transaction reverted: " + JSON.stringify(transactionReceipt));
                     }
@@ -756,7 +754,6 @@ async function waitForTransaction(endpoint, transactionResponse){
         })()
     ]);
     finished = true;
-    console.log('finished', result);
     if (!result){
         throw Error(`Transaction ${transactionResponse.hash} failed`);
     }
