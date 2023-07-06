@@ -213,6 +213,9 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         return sendCustomData({privateKey, toAddress, data: ethers.utils.hexlify(ethers.utils.toUtf8Bytes(string)), value})
     }
 
+    function  getErc20TokenContract(tokenAddress) {
+        return new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, provider);
+    }
 
     endpoint = {
         provider,
@@ -225,12 +228,13 @@ async function createJsonRpcEndpoint({accessURL, rateLimitPerSecond, blockExplor
         getRecommendedGas,
         getRecommendedGasGwei,
         getTokenInfoByAddress,
+        getErc20TokenContract,
         sendOne,
         estimateMinimumGasLimit,
         sendTransaction,
         getBalance,
-        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback}){
-            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback});
+        transfer: async function({privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback, data}){
+            return transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, txCallback, data});
         },
         generalContractCall: async function({contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei}){
             return generalContractCall({endpoint, contractAddress, abiFragment, functionArgs, privateKey, valueField, gasPercentModifier, maxGasPriceGwei});
@@ -708,6 +712,9 @@ where tx.wait() hangs if tx is dropped from mempool.
 So we also poll for that case (idea thanks to https://github.com/ethers-io/ethers.js/issues/945#issuecomment-1047428066)
 */
 async function waitForTransaction(endpoint, transactionResponse){
+	if (typeof transactionResponse === 'string'){
+        transactionResponse = await endpoint.provider.getTransaction(transactionResponse);
+    }
     let finished = false;
     const result = await Promise.race([
         (async () => {
@@ -783,12 +790,13 @@ async function getGasFeeSpent(endpoint, transactionResponse, transactionReceipt)
 
 
 
+function stringToTransactionData(string){
+	return ethers.utils.hexlify(ethers.utils.toUtf8Bytes(string));
+}
 
 
 
-
-
-async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, value, txCallback}){
+async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, quantity, gasPercentModifier, maxGasPriceGwei, value, txCallback, data}){
     let quantityString = `${quantity}`.trim();
     let gasPercentModifierString = gasPercentModifier ? `${gasPercentModifier}` : undefined;
     let maxGasPriceGweiString = maxGasPriceGwei ? `${maxGasPriceGwei}` : undefined;
@@ -821,6 +829,9 @@ async function transfer({endpoint, privateKey, toWalletAddress, tokenAddress, qu
     if (util.isHexEqual(tokenAddress, endpoint.nativeToken.address)){
         overrides.to = toWalletAddress;
         overrides.value = exactQuantityBigNumber;
+		if (data){
+			overrides.data = data;
+		}
         transactionResponse = await endpoint.sendTransaction(nonceManagerProvider, 'sendTransaction', overrides);
     } else {
         const tokenContract = new ethers.Contract(tokenAddress, ethersBase.AbiLibrary.erc20Token, nonceManagerProvider);
@@ -1695,6 +1706,7 @@ async function getLiquidityTotalSupplyMarketCap({tracker}){
 
 
 export default {
-    ...ethersBase, createWalletFromPrivateKey, ethers, waitForTransaction,
-    createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2
+    ...ethersBase, createWalletFromPrivateKey, ethers, waitForTransaction, stringToTransactionData,
+    createRandomWallet, createJsonRpcEndpoint, getLiquidityTotalSupplyMarketCap, UniswapV2,
+    VALID_ERC20_REGEX
 };
